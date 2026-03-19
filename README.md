@@ -118,7 +118,7 @@ No workflow engine framework is needed or used.
 - Supports **vault-per-client isolation** — each client's knowledge is fully separated
 - Runs as a **local binary/server** (single Go binary, zero dependencies)
 
-Dalil talks to MuninnDB through the official `muninn-python` async SDK. All MuninnDB-specific logic is isolated behind a `MemoryBackend` abstract interface, making the backend swappable.
+Dalil talks to MuninnDB through its REST API (`/api/engrams`, `/api/activate`). All MuninnDB-specific logic is isolated behind a `MemoryBackend` abstract interface, making the backend swappable.
 
 <details>
 <summary><strong>ConsultingCase → Engram field mapping</strong></summary>
@@ -139,115 +139,7 @@ Structured case fields (problem, solution, outcome, industry, source, etc.) are 
 
 ---
 
-## Quick Start (Docker)
-
-The fastest way to run Dalil. Requires only [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/).
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/KhaledAwashreh/Dalil.git
-cd Dalil
-```
-
-Create a `.env` file in the project root with your LLM settings:
-
-```bash
-# .env
-LLM_API_KEY=sk-...          # Required for OpenAI/Anthropic; leave empty for Ollama
-LLM_BASE_URL=               # e.g. http://host.docker.internal:11434/v1 for Ollama on host
-LLM_MODEL=mistral            # Model name
-MUNINN_TOKEN=                # MuninnDB vault token (optional for local dev)
-```
-
-> **Ollama on host machine**: Use `http://host.docker.internal:11434/v1` as `LLM_BASE_URL` so the container can reach Ollama running on your host.
-
-### 2. Start everything
-
-```bash
-docker compose up -d
-```
-
-This launches:
-- **MuninnDB** on ports 8474-8477 and 8750 (with persistent `muninndb-data` volume)
-- **Dalil API** on port 8000 (with persistent `dalil-logs` volume)
-
-Dalil waits for MuninnDB to be healthy before starting.
-
-### 3. Verify
-
-```bash
-curl http://localhost:8000/health
-```
-
-Expected:
-
-```json
-{
-  "status": "ok",
-  "muninn_connected": true,
-  "llm_provider": "APILLM",
-  "llm_model": "mistral"
-}
-```
-
-API docs: **http://localhost:8000/docs** (Swagger UI)
-MuninnDB dashboard: **http://localhost:8476**
-
-### 4. Development mode (live code editing)
-
-Mount your local source into the container with hot-reload:
-
-```bash
-docker compose --profile dev up -d
-```
-
-This starts `dalil-api-dev` instead, which:
-- Mounts `./dalil` into the container
-- Runs uvicorn with `--reload` so code changes take effect immediately
-- Uses the same MuninnDB instance
-
-> **Note**: Do not run both `dalil-api` and `dalil-api-dev` simultaneously — they share port 8000.
-
-### Docker volumes
-
-| Volume | Purpose |
-|--------|---------|
-| `muninndb-data` | MuninnDB persistent storage (engrams, indexes, vaults) |
-| `dalil-logs` | Dalil analytics logs (`consult_events.jsonl`, `ingest_events.jsonl`) |
-
-To inspect logs:
-
-```bash
-docker compose exec dalil-api cat /app/logs/consult_events.jsonl
-```
-
-### Stopping
-
-```bash
-docker compose down        # Stop containers (data persists in volumes)
-docker compose down -v     # Stop and remove volumes (deletes all data)
-```
-
-### Custom config file
-
-To use a full `config.json` instead of environment variables:
-
-```bash
-# Mount your config file
-docker run --rm \
-  -v $(pwd)/config.json:/app/config.json:ro \
-  -e DALIL_CONFIG=/app/config.json \
-  -p 8000:8000 \
-  --network host \
-  dalil-api
-```
-
----
-
-## Developer Setup (Local)
-
-For running Dalil from source without Docker.
+## Quick Start
 
 ### Prerequisites
 
@@ -458,7 +350,6 @@ dalil/
 
 ## Roadmap
 
-- [x] Docker & Docker Compose support
 - [ ] LLM-based entity extraction and summarization
 - [ ] API authentication and authorization
 - [ ] WebSocket endpoint for streaming responses

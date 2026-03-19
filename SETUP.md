@@ -82,7 +82,7 @@ After startup, MuninnDB exposes:
 Verify health:
 
 ```bash
-curl http://localhost:8476/api/health
+curl http://localhost:8475/api/health
 ```
 
 ## Step 3: Install Python dependencies
@@ -91,7 +91,7 @@ curl http://localhost:8476/api/health
 pip install -r requirements.txt
 ```
 
-This installs: FastAPI, uvicorn, pydantic, httpx, muninn-python SDK, pypdf.
+This installs: FastAPI, uvicorn, pydantic, httpx, python-multipart, muninn-python SDK, pypdf.
 
 ### Optional dependencies
 
@@ -170,7 +170,7 @@ Edit `config.json`:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `muninn.base_url` | string | `http://localhost:8476` | MuninnDB REST endpoint |
+| `muninn.base_url` | string | `http://localhost:8476` | MuninnDB UI endpoint (REST API is auto-derived on port 8475) |
 | `muninn.token` | string | `""` | Vault API key (`mk_...` format). Leave empty for local dev with default vault. |
 | `muninn.default_vault` | string | `"default"` | Default vault name for requests that don't specify one |
 | `muninn.timeout` | float | `10.0` | Request timeout in seconds |
@@ -376,7 +376,7 @@ Pass `vault` on every API call:
 {"problem": "...", "vault": "client_acme"}
 ```
 
-Vaults are **not auto-provisioned** — create them through the MuninnDB admin UI at `http://localhost:8476` or via the MuninnDB admin API before first use.
+Vaults are **not auto-provisioned**. Writing to a non-existent vault returns `VAULT_LOCKED` (HTTP 401). The `default` vault is always available without authentication. To create additional vaults, use the MuninnDB Web UI at `http://localhost:8476` (default credentials: `root` / `password`). Each custom vault gets its own API key (`mk_...` format) — set this as `MUNINN_TOKEN` in your `.env` file.
 
 ## LLM Provider Examples
 
@@ -463,7 +463,7 @@ MuninnDB isn't running or isn't reachable at the configured URL. Check:
 
 ```bash
 muninn status
-curl http://localhost:8476/api/health
+curl http://localhost:8475/api/health
 ```
 
 ### LLM returns empty responses
@@ -478,9 +478,12 @@ curl http://localhost:11434/v1/models
 
 ### Import errors for muninn-python
 
-```bash
-pip install muninn-python
-```
+> **Known issue:** `muninn-python` v0.2.5 on PyPI is a broken package — it
+> installs metadata but ships no Python module files. Dalil works around this
+> by calling the MuninnDB REST API directly via `httpx` (no SDK needed).
+> The `muninn-python` line in `requirements.txt` is kept for forward
+> compatibility — when a fixed SDK version is released, the adapter can
+> switch back to it.
 
 ### PDF ingestion returns 0 cases
 

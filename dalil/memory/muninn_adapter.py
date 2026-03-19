@@ -1,19 +1,18 @@
 """
-MuninnBackend — MuninnDB adapter implementing the MemoryBackend interface.
+MuninnDB adapter implementing the MemoryBackend interface.
 
-Uses the official muninn-python async SDK (MuninnClient) which talks to
-the MuninnDB REST API on port 8476. All MuninnDB-specific logic is
-isolated here.
-
-MuninnDB stores memories as "engrams". We map ConsultingCase <-> Engram.
-MuninnDB handles embeddings internally (bundled all-MiniLM-L6-v2), so we
-do NOT need to compute or supply embeddings on write.
+Talks directly to the MuninnDB REST API on port 8475.
+Endpoints: POST /api/engrams, POST /api/activate, GET /api/engrams/{id}.
+MuninnDB handles embeddings internally.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
+
+import httpx
 
 from dalil.memory.backend import MemoryBackend, RetrievalResult
 from dalil.memory.cases_schema import ConsultingCase
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class MuninnBackend(MemoryBackend):
-    """MuninnDB-backed memory store using the official Python SDK."""
+    """MuninnDB-backed memory store using direct REST API calls."""
 
     def __init__(
         self,
@@ -32,34 +31,35 @@ class MuninnBackend(MemoryBackend):
         timeout: float = 10.0,
     ):
         self.base_url = base_url
+        self.rest_url = base_url.replace(":8476", ":8475")
         self.token = token
         self.default_vault = default_vault
         self.timeout = timeout
-        self._client: Any = None
+        self._http: httpx.AsyncClient | None = None
 
-    async def _get_client(self) -> Any:
-        """Lazy-init the MuninnClient."""
-        if self._client is None:
-            try:
-                from muninn import MuninnClient
-            except ImportError:
-                raise ImportError(
-                    "muninn-python SDK not installed. "
-                    "Install it with: pip install muninn-python"
-                )
-            self._client = MuninnClient(
-                base_url=self.base_url,
-                token=self.token or "",
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
+    async def _get_http(self) -> httpx.AsyncClient:
+        if self._http is None or self._http.is_closed:
+            self._http = httpx.AsyncClient(
+                base_url=self.rest_url,
+                headers=self._headers(),
                 timeout=self.timeout,
             )
-        return self._client
+        return self._http
 
     async def add_case(self, case: ConsultingCase, vault: str = "default") -> str:
         v = vault or self.default_vault
-        client = await self._get_client()
+        http = await self._get_http()
         payload = case.to_engram_payload(vault=v)
-        resp = await client.write(**payload)
-        engram_id = resp.id if hasattr(resp, "id") else str(resp)
+        resp = await http.post("/api/engrams", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        engram_id = data.get("id", str(data))
         logger.info("Stored case '%s' as engram %s in vault '%s'", case.title, engram_id, v)
         return engram_id
 
@@ -68,23 +68,25 @@ class MuninnBackend(MemoryBackend):
     ) -> list[str]:
         v = vault or self.default_vault
         ids: list[str] = []
-        # MuninnDB batch endpoint supports max 50 per request
-        batch_size = 50
-        client = await self._get_client()
-        for i in range(0, len(cases), batch_size):
-            batch = cases[i : i + batch_size]
-            payloads = [c.to_engram_payload(vault=v) for c in batch]
-            try:
-                resp = await client.write_batch(payloads)
-                batch_ids = [
-                    r.id if hasattr(r, "id") else str(r) for r in resp
-                ]
-                ids.extend(batch_ids)
-            except AttributeError:
-                # Fallback: if SDK doesn't expose write_batch, write one by one
-                for payload in payloads:
-                    r = await client.write(**payload)
-                    ids.append(r.id if hasattr(r, "id") else str(r))
+        http = await self._get_http()
+        # Write one by one with retry on rate limit (429)
+        for i, case in enumerate(cases):
+            payload = case.to_engram_payload(vault=v)
+            for attempt in range(5):
+                resp = await http.post("/api/engrams", json=payload)
+                if resp.status_code == 429:
+                    wait = min(2 ** attempt, 10)
+                    logger.warning("Rate limited on case %d, retrying in %ds", i, wait)
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                ids.append(data.get("id", str(data)))
+                break
+            else:
+                resp.raise_for_status()
+            if i > 0 and i % 100 == 0:
+                logger.info("Ingested %d/%d cases into vault '%s'", i, len(cases), v)
         logger.info("Stored %d cases in vault '%s'", len(ids), v)
         return ids
 
@@ -97,58 +99,61 @@ class MuninnBackend(MemoryBackend):
         threshold: float = 0.1,
     ) -> RetrievalResult:
         v = vault or self.default_vault
-        client = await self._get_client()
+        http = await self._get_http()
 
-        activate_kwargs: dict[str, Any] = {
+        payload: dict[str, Any] = {
             "vault": v,
             "context": [query],
             "max_results": max_results,
             "threshold": threshold,
         }
 
-        resp = await client.activate(**activate_kwargs)
+        resp = await http.post("/api/activate", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
 
-        activations = resp.activations if hasattr(resp, "activations") else []
+        activations = data if isinstance(data, list) else data.get("activations", [])
         cases: list[ConsultingCase] = []
         scores: list[float] = []
 
         for act in activations:
             engram_dict = {
-                "id": act.id if hasattr(act, "id") else "",
-                "concept": act.concept if hasattr(act, "concept") else "",
-                "content": act.content if hasattr(act, "content") else "",
-                "tags": act.tags if hasattr(act, "tags") else [],
-                "confidence": act.confidence if hasattr(act, "confidence") else 0.8,
-                "entities": act.entities if hasattr(act, "entities") else [],
+                "id": act.get("id", ""),
+                "concept": act.get("concept", ""),
+                "content": act.get("content", ""),
+                "tags": act.get("tags", []),
+                "confidence": act.get("confidence", 0.8),
+                "entities": act.get("entities", []),
             }
             case = ConsultingCase.from_engram(engram_dict)
 
-            # Filter by tags if requested
             if tags and not any(t in case.tags for t in tags):
                 continue
 
             cases.append(case)
-            scores.append(act.score if hasattr(act, "score") else 0.0)
+            scores.append(act.get("score", 0.0))
 
         return RetrievalResult(
             cases=cases,
             scores=scores,
-            total_found=resp.total_found if hasattr(resp, "total_found") else len(cases),
-            latency_ms=resp.latency_ms if hasattr(resp, "latency_ms") else 0.0,
+            total_found=data.get("total_found", len(cases)) if isinstance(data, dict) else len(cases),
+            latency_ms=data.get("latency_ms", 0.0) if isinstance(data, dict) else 0.0,
         )
 
     async def get_case(self, case_id: str, vault: str = "default") -> ConsultingCase | None:
         v = vault or self.default_vault
-        client = await self._get_client()
+        http = await self._get_http()
         try:
-            resp = await client.read(id=case_id, vault=v)
+            resp = await http.get(f"/api/engrams/{case_id}", params={"vault": v})
+            resp.raise_for_status()
+            data = resp.json()
             engram_dict = {
-                "id": resp.id if hasattr(resp, "id") else case_id,
-                "concept": resp.concept if hasattr(resp, "concept") else "",
-                "content": resp.content if hasattr(resp, "content") else "",
-                "tags": resp.tags if hasattr(resp, "tags") else [],
-                "confidence": resp.confidence if hasattr(resp, "confidence") else 0.8,
-                "entities": resp.entities if hasattr(resp, "entities") else [],
+                "id": data.get("id", case_id),
+                "concept": data.get("concept", ""),
+                "content": data.get("content", ""),
+                "tags": data.get("tags", []),
+                "confidence": data.get("confidence", 0.8),
+                "entities": data.get("entities", []),
             }
             return ConsultingCase.from_engram(engram_dict)
         except Exception as e:
@@ -157,18 +162,16 @@ class MuninnBackend(MemoryBackend):
 
     async def health_check(self) -> bool:
         try:
-            import httpx
-
             async with httpx.AsyncClient(timeout=5.0) as http:
-                resp = await http.get(f"{self.base_url}/api/health")
+                resp = await http.get(f"{self.rest_url}/api/health")
                 return resp.status_code == 200
         except Exception:
             return False
 
     async def close(self) -> None:
-        if self._client is not None:
+        if self._http is not None:
             try:
-                await self._client.close()
+                await self._http.aclose()
             except Exception:
                 pass
-            self._client = None
+            self._http = None
