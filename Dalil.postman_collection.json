@@ -1,0 +1,291 @@
+{
+	"info": {
+		"name": "Dalil API",
+		"description": "Local testing collection for the Dalil consulting memory system API.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000"
+		},
+		{
+			"key": "vault",
+			"value": "default"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Check API health, MuninnDB connectivity, and LLM status."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Consult",
+			"item": [
+				{
+					"name": "Consult — Basic",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"problem\": \"How should we approach a digital transformation for a mid-size retail company?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/consult",
+							"host": ["{{base_url}}"],
+							"path": ["consult"]
+						},
+						"description": "Submit a basic consulting query with just a problem statement."
+					},
+					"response": []
+				},
+				{
+					"name": "Consult — With Context and Tags",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"problem\": \"What change management strategy works best for ERP migrations?\",\n  \"context\": \"The client is a 500-employee manufacturing firm currently on legacy SAP. Leadership is supportive but middle management is resistant.\",\n  \"tags\": [\"change-management\", \"erp\", \"manufacturing\"],\n  \"vault\": \"{{vault}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/consult",
+							"host": ["{{base_url}}"],
+							"path": ["consult"]
+						},
+						"description": "Submit a consulting query with full context, tags, and vault."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Ingest — CSV",
+			"item": [
+				{
+					"name": "Ingest CSV (server path)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_path\": \"/path/to/your/cases.csv\",\n  \"vault\": \"{{vault}}\",\n  \"tags\": [\"imported\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/csv",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "csv"]
+						},
+						"description": "Ingest a CSV file by server-side path. CSV must have at least 'title' and 'content' columns."
+					},
+					"response": []
+				},
+				{
+					"name": "Ingest CSV (file upload)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "Select a CSV file to upload"
+								},
+								{
+									"key": "vault",
+									"value": "default",
+									"type": "text"
+								},
+								{
+									"key": "tags",
+									"value": "imported,csv",
+									"type": "text",
+									"description": "Comma-separated tags"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/csv/upload",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "csv", "upload"]
+						},
+						"description": "Upload a CSV file directly. CSV must have at least 'title' and 'content' columns."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Ingest — PDF",
+			"item": [
+				{
+					"name": "Ingest PDF (server path)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_path\": \"/path/to/your/document.pdf\",\n  \"vault\": \"{{vault}}\",\n  \"tags\": [\"imported\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/pdf",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "pdf"]
+						},
+						"description": "Ingest a PDF file by server-side path. PDF will be chunked automatically."
+					},
+					"response": []
+				},
+				{
+					"name": "Ingest PDF (file upload)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "Select a PDF file to upload"
+								},
+								{
+									"key": "vault",
+									"value": "default",
+									"type": "text"
+								},
+								{
+									"key": "tags",
+									"value": "imported,pdf",
+									"type": "text",
+									"description": "Comma-separated tags"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/pdf/upload",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "pdf", "upload"]
+						},
+						"description": "Upload a PDF file directly. PDF will be chunked automatically."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Ingest — Confluence",
+			"item": [
+				{
+					"name": "Ingest Confluence Page (by URL)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"url\": \"https://yourorg.atlassian.net/wiki/spaces/TEAM/pages/123456/Page+Title\",\n  \"vault\": \"{{vault}}\",\n  \"tags\": [\"confluence\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/confluence",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "confluence"]
+						},
+						"description": "Ingest a single Confluence page by its full URL."
+					},
+					"response": []
+				},
+				{
+					"name": "Ingest Confluence Page (by ID)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"page_id\": \"123456\",\n  \"vault\": \"{{vault}}\",\n  \"tags\": [\"confluence\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/confluence",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "confluence"]
+						},
+						"description": "Ingest a single Confluence page by its page ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Ingest Confluence Space",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"space_key\": \"TEAM\",\n  \"vault\": \"{{vault}}\",\n  \"limit\": 25,\n  \"tags\": [\"confluence\", \"bulk\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ingest/confluence",
+							"host": ["{{base_url}}"],
+							"path": ["ingest", "confluence"]
+						},
+						"description": "Ingest all pages from a Confluence space (up to the limit). Requires confluence_base_url, confluence_token, and confluence_email in config."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
