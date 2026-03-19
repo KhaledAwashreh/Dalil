@@ -1,0 +1,22 @@
+# Core
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+httpx>=0.27.0
+
+# MuninnDB Python SDK
+muninn-python>=0.1.0
+
+# Ingestion
+pypdf>=4.0.0
+
+# Optional: local embeddings (disabled by default — MuninnDB handles embeddings)
+# sentence-transformers>=2.5.0
+
+# Optional: local LLM
+# transformers>=4.40.0
+# torch>=2.2.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

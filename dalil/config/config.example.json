@@ -1,0 +1,31 @@
+{
+  "muninn": {
+    "base_url": "http://localhost:8476",
+    "token": "",
+    "default_vault": "default",
+    "timeout": 10.0
+  },
+  "llm": {
+    "type": "api",
+    "provider": "ollama",
+    "model": "mistral",
+    "api_key": "",
+    "base_url": "http://localhost:11434/v1",
+    "temperature": 0.3,
+    "max_tokens": 2048
+  },
+  "ingestion": {
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "confluence_base_url": "https://yourorg.atlassian.net/wiki",
+    "confluence_token": "",
+    "confluence_email": ""
+  },
+  "embeddings": {
+    "enabled": false,
+    "model_name": "all-MiniLM-L6-v2"
+  },
+  "log_level": "INFO",
+  "api_host": "0.0.0.0",
+  "api_port": 8000
+}
