@@ -222,3 +222,13 @@ async def ingest_confluence(req: IngestConfluenceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def main():
+    import uvicorn
+
+    os.environ.setdefault("DALIL_CONFIG", "config.json")
+    uvicorn.run("dalil.api.main:app", host="0.0.0.0", port=8000, reload=False)
+
+
+if __name__ == "__main__":
+    main()
+
