@@ -9,6 +9,7 @@ services:
     image: ghcr.io/scrypster/muninndb:latest
     container_name: dalil-muninndb
     ports:
+      - "8000:8000"   # Dalil API (shared network namespace)
       - "8474:8474"   # Internal API
       - "8475:8475"   # REST API
       - "8476:8476"   # Web UI / Dashboard
@@ -18,10 +19,10 @@ services:
       - muninndb-data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8476/api/health"]
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8476 || exit 0"]
       interval: 10s
       timeout: 5s
-      start_period: 15s
+      start_period: 20s
       retries: 5
 
   # ---- Dalil API — consulting memory system ----
@@ -30,22 +31,22 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: dalil-api
-    ports:
-      - "8000:8000"
     environment:
-      # MuninnDB connection (uses Docker service name)
-      MUNINN_URL: "http://muninndb:8476"
+      # MuninnDB connection — share network namespace with muninndb container
+      MUNINN_URL: "http://127.0.0.1:8476"
       MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
 
-      # LLM configuration
+      # LLM configuration — host.docker.internal reaches Ollama on host
       LLM_API_KEY: "${LLM_API_KEY:-}"
-      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434/v1}"
       LLM_MODEL: "${LLM_MODEL:-mistral}"
 
       # Optional: point to a config file mounted into the container
       DALIL_CONFIG: "${DALIL_CONFIG:-}"
     volumes:
       - dalil-logs:/app/logs
+    # Share MuninnDB's network namespace so 127.0.0.1 reaches MuninnDB
+    network_mode: "service:muninndb"
     depends_on:
       muninndb:
         condition: service_healthy
@@ -59,19 +60,18 @@ services:
     container_name: dalil-api-dev
     profiles:
       - dev
-    ports:
-      - "8000:8000"
     environment:
-      MUNINN_URL: "http://muninndb:8476"
+      MUNINN_URL: "http://127.0.0.1:8476"
       MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
       LLM_API_KEY: "${LLM_API_KEY:-}"
-      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434/v1}"
       LLM_MODEL: "${LLM_MODEL:-mistral}"
       DALIL_CONFIG: "${DALIL_CONFIG:-}"
     volumes:
       # Mount local source for live editing — changes reflect immediately
       - ./dalil:/app/dalil
       - dalil-logs:/app/logs
+    network_mode: "service:muninndb"
     depends_on:
       muninndb:
         condition: service_healthy
