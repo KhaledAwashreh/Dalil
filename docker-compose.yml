@@ -1,0 +1,86 @@
+# Dalil — Docker Compose
+# Usage:
+#   docker compose up              # production mode
+#   docker compose --profile dev up  # development mode (mounts local source)
+
+services:
+  # ---- MuninnDB — cognitive memory database ----
+  muninndb:
+    image: ghcr.io/scrypster/muninndb:latest
+    container_name: dalil-muninndb
+    ports:
+      - "8474:8474"   # Internal API
+      - "8475:8475"   # REST API
+      - "8476:8476"   # Web UI / Dashboard
+      - "8477:8477"   # gRPC
+      - "8750:8750"   # MCP (AI tool integration)
+    volumes:
+      - muninndb-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8476/api/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+
+  # ---- Dalil API — consulting memory system ----
+  dalil-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dalil-api
+    ports:
+      - "8000:8000"
+    environment:
+      # MuninnDB connection (uses Docker service name)
+      MUNINN_URL: "http://muninndb:8476"
+      MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
+
+      # LLM configuration
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_MODEL: "${LLM_MODEL:-mistral}"
+
+      # Optional: point to a config file mounted into the container
+      DALIL_CONFIG: "${DALIL_CONFIG:-}"
+    volumes:
+      - dalil-logs:/app/logs
+    depends_on:
+      muninndb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---- Dalil API — development mode (local source mounted) ----
+  dalil-api-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dalil-api-dev
+    profiles:
+      - dev
+    ports:
+      - "8000:8000"
+    environment:
+      MUNINN_URL: "http://muninndb:8476"
+      MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_MODEL: "${LLM_MODEL:-mistral}"
+      DALIL_CONFIG: "${DALIL_CONFIG:-}"
+    volumes:
+      # Mount local source for live editing — changes reflect immediately
+      - ./dalil:/app/dalil
+      - dalil-logs:/app/logs
+    depends_on:
+      muninndb:
+        condition: service_healthy
+    restart: unless-stopped
+    # Uvicorn with --reload for auto-restart on file changes
+    command: ["uvicorn", "dalil.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  muninndb-data:
+    driver: local
+  dalil-logs:
+    driver: local
