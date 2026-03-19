@@ -15,7 +15,6 @@
   <img src="https://img.shields.io/badge/framework-FastAPI-009688" alt="FastAPI">
   <img src="https://img.shields.io/badge/memory-MuninnDB-purple" alt="MuninnDB">
   <img src="https://img.shields.io/badge/LLM-provider--agnostic-orange" alt="Provider Agnostic">
-  <img src="https://img.shields.io/badge/LangGraph-none-red" alt="No LangGraph">
 </p>
 
 ---
