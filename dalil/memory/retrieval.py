@@ -17,14 +17,16 @@ async def retrieve_similar_cases(
     max_results: int = 10,
     tags: list[str] | None = None,
     threshold: float = 0.1,
+    max_hops: int = 2,
 ) -> RetrievalResult:
-    """Standard semantic retrieval from memory backend."""
+    """Standard semantic retrieval from memory backend with graph traversal."""
     return await backend.query_cases(
         query=query,
         vault=vault,
         max_results=max_results,
         tags=tags,
         threshold=threshold,
+        max_hops=max_hops,
     )
 
 
@@ -34,6 +36,7 @@ async def retrieve_by_industry(
     query: str,
     vault: str = "default",
     max_results: int = 10,
+    max_hops: int = 2,
 ) -> RetrievalResult:
     """Retrieve cases filtered to a specific industry."""
     result = await backend.query_cases(
@@ -41,6 +44,7 @@ async def retrieve_by_industry(
         vault=vault,
         max_results=max_results * 2,  # over-fetch to compensate for filtering
         tags=[industry],
+        max_hops=max_hops,
     )
     # Post-filter by industry field in case tags aren't sufficient
     filtered_cases = []

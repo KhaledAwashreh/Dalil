@@ -48,8 +48,9 @@ class MemoryBackend(ABC):
         max_results: int = 10,
         tags: list[str] | None = None,
         threshold: float = 0.1,
+        max_hops: int = 2,
     ) -> RetrievalResult:
-        """Semantic + keyword search for relevant cases."""
+        """Semantic + keyword search for relevant cases with graph traversal."""
         ...
 
     @abstractmethod
