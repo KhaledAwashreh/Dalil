@@ -13,6 +13,7 @@ from pathlib import Path
 @dataclass
 class MuninnSettings:
     base_url: str = "http://localhost:8476"
+    mcp_url: str = "http://localhost:8750/mcp"
     token: str = ""
     default_vault: str = "default"
     timeout: float = 10.0
@@ -69,6 +70,7 @@ def load_settings(config_path: str | None = None) -> Settings:
             m = data["muninn"]
             settings.muninn = MuninnSettings(
                 base_url=m.get("base_url", settings.muninn.base_url),
+                mcp_url=m.get("mcp_url", settings.muninn.mcp_url),
                 token=m.get("token", settings.muninn.token),
                 default_vault=m.get("default_vault", settings.muninn.default_vault),
                 timeout=m.get("timeout", settings.muninn.timeout),
@@ -106,6 +108,7 @@ def load_settings(config_path: str | None = None) -> Settings:
 
     # Environment variable overrides (highest priority)
     settings.muninn.base_url = os.environ.get("MUNINN_URL", settings.muninn.base_url)
+    settings.muninn.mcp_url = os.environ.get("MUNINN_MCP_URL", settings.muninn.mcp_url)
     settings.muninn.token = os.environ.get("MUNINN_TOKEN", settings.muninn.token)
     settings.llm.api_key = os.environ.get("LLM_API_KEY", settings.llm.api_key)
     settings.llm.base_url = os.environ.get("LLM_BASE_URL", settings.llm.base_url)

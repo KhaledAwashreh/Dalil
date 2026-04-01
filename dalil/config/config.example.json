@@ -1,6 +1,7 @@
 {
   "muninn": {
     "base_url": "http://localhost:8476",
+    "mcp_url": "http://localhost:8750/mcp",
     "token": "",
     "default_vault": "default",
     "timeout": 10.0
