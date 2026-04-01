@@ -69,9 +69,10 @@ class ConsultingCase(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def to_engram_payload(self, vault: str = "default") -> dict[str, Any]:
-        """Convert to MuninnDB engram write payload."""
-        # Pack the structured case data into the engram content as JSON
+    def to_engram_content(self) -> str:
+        """Serialize case data into engram content string."""
+        import json
+
         case_body = {
             "case_id": self.id,
             "type": self.type.value,
@@ -87,14 +88,24 @@ class ConsultingCase(BaseModel):
             "source_uri": self.source_uri,
             "metadata": self.metadata,
         }
-        import json
+        return f"{self.content}\n\n---\n{json.dumps(case_body)}"
 
-        content_str = f"{self.content}\n\n---\n{json.dumps(case_body)}"
+    def to_mcp_arguments(self, vault: str = "default") -> dict[str, Any]:
+        """Convert to MCP muninn_remember arguments."""
+        return {
+            "vault": vault,
+            "concept": self.title[:512],
+            "content": self.to_engram_content()[:16384],
+            "tags": self.tags,
+            "confidence": self.confidence,
+        }
 
+    def to_engram_payload(self, vault: str = "default") -> dict[str, Any]:
+        """Convert to MuninnDB REST engram write payload (legacy)."""
         engram: dict[str, Any] = {
             "vault": vault,
             "concept": self.title[:512],
-            "content": content_str[:16384],
+            "content": self.to_engram_content()[:16384],
             "tags": self.tags,
             "type_label": self.type.value,
             "confidence": self.confidence,
