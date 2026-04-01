@@ -75,3 +75,30 @@ class HealthResponse(BaseModel):
     muninn_connected: bool
     llm_provider: str
     llm_model: str
+
+
+# --- Feedback ---
+
+class FeedbackRequest(BaseModel):
+    request_id: str = Field(..., description="The consultation request ID to give feedback on")
+    signal: str = Field(..., description="'useful' or 'not_useful'")
+    case_ids: list[str] = Field(default_factory=list, description="Specific case IDs (optional, defaults to all cases from the request)")
+    comment: str = Field("", description="Optional reason for feedback")
+
+
+class FeedbackResponse(BaseModel):
+    request_id: str
+    signal: str
+    cases_affected: int
+    actions_taken: list[str]
+
+
+# --- Vault Stats ---
+
+class VaultStatsResponse(BaseModel):
+    vault: str
+    engram_count: int = 0
+    storage_bytes: int = 0
+    confidence_distribution: dict = Field(default_factory=dict)
+    coherence_scores: dict = Field(default_factory=dict)
+    contradiction_count: int = 0

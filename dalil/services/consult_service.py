@@ -46,6 +46,12 @@ class ConsultService:
         self.memory = memory
         self.llm = llm
         self.default_vault = default_vault
+        # Cache request_id → (case_ids, vault) for feedback lookup
+        self._request_cases: dict[str, tuple[list[str], str]] = {}
+
+    def get_request_cases(self, request_id: str) -> tuple[list[str], str] | None:
+        """Look up cached case IDs and vault for a request."""
+        return self._request_cases.get(request_id)
 
     async def consult(
         self,
@@ -92,6 +98,10 @@ class ConsultService:
             event.retrieval_count = cases_result.total_found
             metrics.increment("memory_queries")
             metrics.increment("memory_hits", len(cases_result.cases))
+
+            # Cache case IDs for feedback
+            case_ids = [c.id for c in cases_result.cases]
+            self._request_cases[request_id] = (case_ids, vault)
 
             # Track sources
             event.sources_used = list({c.source_type.value for c in cases_result.cases})

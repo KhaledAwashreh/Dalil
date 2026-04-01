@@ -15,11 +15,14 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from dalil.api.models import (
     ConsultRequest,
     ConsultResponse,
+    FeedbackRequest,
+    FeedbackResponse,
     HealthResponse,
     IngestConfluenceRequest,
     IngestCSVRequest,
     IngestPDFRequest,
     IngestResponse,
+    VaultStatsResponse,
 )
 from dalil.config.settings import Settings, load_settings
 from dalil.llm.factory import create_llm
@@ -57,6 +60,7 @@ async def lifespan(app: FastAPI):
     # Initialize memory backend
     memory = MuninnBackend(
         base_url=settings.muninn.base_url,
+        mcp_url=settings.muninn.mcp_url,
         token=settings.muninn.token or None,
         default_vault=settings.muninn.default_vault,
         timeout=settings.muninn.timeout,
@@ -219,6 +223,96 @@ async def ingest_confluence(req: IngestConfluenceRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Confluence ingestion failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+async def feedback(req: FeedbackRequest):
+    """Provide feedback on a consultation to improve future results."""
+    if req.signal not in ("useful", "not_useful"):
+        raise HTTPException(status_code=400, detail="signal must be 'useful' or 'not_useful'")
+
+    # Look up case IDs from the consultation
+    cached = consult_service.get_request_cases(req.request_id)
+    if not cached and not req.case_ids:
+        raise HTTPException(
+            status_code=404,
+            detail="request_id not found in cache and no case_ids provided",
+        )
+
+    case_ids = req.case_ids or (cached[0] if cached else [])
+    vault = cached[1] if cached else "default"
+    actions: list[str] = []
+
+    from dalil.memory.muninn_adapter import MuninnBackend
+
+    if not isinstance(memory, MuninnBackend):
+        raise HTTPException(status_code=501, detail="Feedback requires MuninnDB backend")
+
+    if req.signal == "useful":
+        # Re-activate cases to boost temporal priority
+        await memory.re_activate(query="", vault=vault, case_ids=case_ids)
+        actions.append(f"re-activated {len(case_ids)} cases")
+
+        # Link co-useful cases together
+        if len(case_ids) > 1:
+            for i in range(len(case_ids) - 1):
+                try:
+                    await memory.link_cases(
+                        source_id=case_ids[i],
+                        target_id=case_ids[i + 1],
+                        relation="supports",
+                        vault=vault,
+                    )
+                except Exception as e:
+                    logger.warning("Failed to link %s -> %s: %s", case_ids[i], case_ids[i + 1], e)
+            actions.append(f"linked {len(case_ids)} cases with 'supports' relation")
+
+    elif req.signal == "not_useful":
+        for cid in case_ids:
+            try:
+                await memory.archive_case(
+                    case_id=cid, vault=vault, reason=req.comment or "Not useful",
+                )
+            except Exception as e:
+                logger.warning("Failed to archive %s: %s", cid, e)
+        actions.append(f"archived {len(case_ids)} cases")
+
+    return FeedbackResponse(
+        request_id=req.request_id,
+        signal=req.signal,
+        cases_affected=len(case_ids),
+        actions_taken=actions,
+    )
+
+
+@app.get("/vault/stats", response_model=VaultStatsResponse)
+async def vault_stats(vault: str = "default"):
+    """Get knowledge health metrics for a vault."""
+    from dalil.memory.muninn_adapter import MuninnBackend
+
+    if not isinstance(memory, MuninnBackend):
+        raise HTTPException(status_code=501, detail="Vault stats requires MuninnDB backend")
+
+    try:
+        stats = await memory.get_stats(vault=vault)
+        contradiction_count = 0
+        try:
+            contradictions = await memory.get_contradictions(vault=vault)
+            contradiction_count = len(contradictions)
+        except Exception:
+            pass
+
+        return VaultStatsResponse(
+            vault=vault,
+            engram_count=stats.get("engram_count", stats.get("count", 0)),
+            storage_bytes=stats.get("storage_bytes", 0),
+            confidence_distribution=stats.get("confidence_distribution", {}),
+            coherence_scores=stats.get("coherence_scores", {}),
+            contradiction_count=contradiction_count,
+        )
+    except Exception as e:
+        logger.exception("Failed to get vault stats")
         raise HTTPException(status_code=500, detail=str(e))
 
 
