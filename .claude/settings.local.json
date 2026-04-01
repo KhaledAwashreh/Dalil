@@ -59,7 +59,13 @@
       "Bash(curl -s -X POST http://localhost:8000/ingest/csv/upload -F \"file=@/tmp/test_sample.csv\" -F \"vault=default\" -F \"tags=support,tickets\")",
       "Bash(curl -s -X POST http://localhost:8000/consult -H \"Content-Type: application/json\" -d '{\"\"problem\"\": \"\"How should I handle a security breach involving medical data?\"\", \"\"vault\"\": \"\"default\"\"}')",
       "Bash(curl -s -X POST http://localhost:8000/consult -H \"Content-Type: application/json\" -d '{\"\"problem\"\": \"\"How should I handle a security breach involving medical data?\"\", \"\"vault\"\": \"\"default\"\"}' -w \"\\\\nHTTP_CODE: %{http_code}\")",
-      "Bash(curl -s http://localhost:11434/api/tags)"
+      "Bash(curl -s http://localhost:11434/api/tags)",
+      "Bash(grep -E \"\\\\.\\(md|txt|json|sh|ps1\\)$\")",
+      "Bash(find . -type f -name \"*.py\" -exec wc -l {} +)",
+      "mcp__9e1cb6d6-2a62-4659-a83e-5a3828be410a__search",
+      "Bash(python -m pytest dalil/tests/ -v)",
+      "Bash(cp \"/c/Projects/Personal projects/consultant/dalil/agents/commands/\"*.md \"/c/Projects/Personal projects/consultant/.claude/commands/\")",
+      "Bash(cp \"/c/Projects/Personal projects/consultant/dalil/agents/sub-agents/\"*.md \"/c/Projects/Personal projects/consultant/.claude/commands/\")"
     ]
   }
 }
