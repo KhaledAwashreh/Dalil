@@ -1,9 +1,9 @@
 """
 MuninnDB adapter implementing the MemoryBackend interface.
 
-Talks directly to the MuninnDB REST API on port 8475.
-Endpoints: POST /api/engrams, POST /api/activate, GET /api/engrams/{id}.
-MuninnDB handles embeddings internally.
+Ingestion uses MCP (JSON-RPC 2.0 on port 8750) to trigger MuninnDB's
+enrichment pipeline (entity extraction, knowledge graph edges).
+Retrieval uses the REST API (port 8475) for the 6-phase ACTIVATE pipeline.
 """
 
 from __future__ import annotations
@@ -19,23 +19,28 @@ from dalil.memory.cases_schema import ConsultingCase
 
 logger = logging.getLogger(__name__)
 
+_MCP_BATCH_SIZE = 50  # MuninnDB limit for muninn_remember_batch
+
 
 class MuninnBackend(MemoryBackend):
-    """MuninnDB-backed memory store using direct REST API calls."""
+    """MuninnDB-backed memory store using MCP for writes, REST for reads."""
 
     def __init__(
         self,
         base_url: str = "http://localhost:8476",
+        mcp_url: str = "http://localhost:8750/mcp",
         token: str | None = None,
         default_vault: str = "default",
         timeout: float = 10.0,
     ):
         self.base_url = base_url
         self.rest_url = base_url.replace(":8476", ":8475")
+        self.mcp_url = mcp_url
         self.token = token
         self.default_vault = default_vault
         self.timeout = timeout
         self._http: httpx.AsyncClient | None = None
+        self._mcp_id = 0
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -52,14 +57,52 @@ class MuninnBackend(MemoryBackend):
             )
         return self._http
 
+    # ── MCP helper ──────────────────────────────────────────────────
+
+    async def _mcp_call(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+        """Send a JSON-RPC 2.0 call to MuninnDB's MCP endpoint."""
+        self._mcp_id += 1
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments,
+            },
+            "id": self._mcp_id,
+        }
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(
+                self.mcp_url,
+                json=payload,
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if "error" in data:
+                raise RuntimeError(
+                    f"MCP {tool_name} failed: {data['error'].get('message', data['error'])}"
+                )
+            return data.get("result")
+
+    # ── Ingestion (MCP) ────────────────────────────────────────────
+
     async def add_case(self, case: ConsultingCase, vault: str = "default") -> str:
         v = vault or self.default_vault
-        http = await self._get_http()
-        payload = case.to_engram_payload(vault=v)
-        resp = await http.post("/api/engrams", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        engram_id = data.get("id", str(data))
+        args = case.to_mcp_arguments(vault=v)
+        result = await self._mcp_call("muninn_remember", args)
+        engram_id = ""
+        if isinstance(result, dict):
+            engram_id = result.get("id", str(result))
+        elif isinstance(result, list):
+            for item in result:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    engram_id = item.get("text", str(result))
+                    break
+            if not engram_id:
+                engram_id = str(result)
+        else:
+            engram_id = str(result)
         logger.info("Stored case '%s' as engram %s in vault '%s'", case.title, engram_id, v)
         return engram_id
 
@@ -68,27 +111,42 @@ class MuninnBackend(MemoryBackend):
     ) -> list[str]:
         v = vault or self.default_vault
         ids: list[str] = []
-        http = await self._get_http()
-        # Write one by one with retry on rate limit (429)
-        for i, case in enumerate(cases):
-            payload = case.to_engram_payload(vault=v)
-            for attempt in range(5):
-                resp = await http.post("/api/engrams", json=payload)
-                if resp.status_code == 429:
-                    wait = min(2 ** attempt, 10)
-                    logger.warning("Rate limited on case %d, retrying in %ds", i, wait)
-                    await asyncio.sleep(wait)
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                ids.append(data.get("id", str(data)))
-                break
+
+        # Process in batches of 50 using muninn_remember_batch
+        for batch_start in range(0, len(cases), _MCP_BATCH_SIZE):
+            batch = cases[batch_start : batch_start + _MCP_BATCH_SIZE]
+            memories = []
+            for case in batch:
+                memories.append({
+                    "concept": case.title[:512],
+                    "content": case.to_engram_content(),
+                    "tags": case.tags,
+                    "confidence": case.confidence,
+                })
+            result = await self._mcp_call("muninn_remember_batch", {
+                "vault": v,
+                "memories": memories,
+            })
+            # Extract IDs from batch result
+            if isinstance(result, list):
+                for item in result:
+                    if isinstance(item, dict):
+                        ids.append(item.get("id", item.get("text", str(item))))
+                    else:
+                        ids.append(str(item))
+            elif isinstance(result, dict):
+                batch_ids = result.get("ids", [])
+                ids.extend(batch_ids if batch_ids else [str(result)])
             else:
-                resp.raise_for_status()
-            if i > 0 and i % 100 == 0:
-                logger.info("Ingested %d/%d cases into vault '%s'", i, len(cases), v)
+                ids.append(str(result))
+
+            if batch_start > 0 and batch_start % 100 == 0:
+                logger.info("Ingested %d/%d cases into vault '%s'", batch_start, len(cases), v)
+
         logger.info("Stored %d cases in vault '%s'", len(ids), v)
         return ids
+
+    # ── Retrieval (REST) ────────────────────────────────────────────
 
     async def query_cases(
         self,
@@ -97,6 +155,7 @@ class MuninnBackend(MemoryBackend):
         max_results: int = 10,
         tags: list[str] | None = None,
         threshold: float = 0.1,
+        max_hops: int = 2,
     ) -> RetrievalResult:
         v = vault or self.default_vault
         http = await self._get_http()
@@ -106,6 +165,7 @@ class MuninnBackend(MemoryBackend):
             "context": [query],
             "max_results": max_results,
             "threshold": threshold,
+            "max_hops": max_hops,
         }
 
         resp = await http.post("/api/activate", json=payload)
@@ -159,6 +219,72 @@ class MuninnBackend(MemoryBackend):
         except Exception as e:
             logger.warning("Failed to read case %s: %s", case_id, e)
             return None
+
+    # ── Feedback (MCP) ──────────────────────────────────────────────
+
+    async def link_cases(
+        self,
+        source_id: str,
+        target_id: str,
+        relation: str = "supports",
+        vault: str = "default",
+        weight: float = 0.8,
+    ) -> None:
+        """Create a weighted association between two engrams."""
+        v = vault or self.default_vault
+        await self._mcp_call("muninn_link", {
+            "source_id": source_id,
+            "target_id": target_id,
+            "relation": relation,
+            "vault": v,
+            "weight": weight,
+        })
+        logger.info("Linked %s -> %s (%s, weight=%.1f)", source_id, target_id, relation, weight)
+
+    async def archive_case(
+        self, case_id: str, vault: str = "default", reason: str = ""
+    ) -> None:
+        """Mark an engram as archived via state transition."""
+        v = vault or self.default_vault
+        await self._mcp_call("muninn_state", {
+            "id": case_id,
+            "state": "archived",
+            "vault": v,
+            "reason": reason or "Marked not useful via feedback",
+        })
+        logger.info("Archived case %s in vault '%s'", case_id, v)
+
+    async def re_activate(
+        self, query: str, vault: str = "default", case_ids: list[str] | None = None
+    ) -> None:
+        """Re-activate cases to boost their temporal priority."""
+        v = vault or self.default_vault
+        if case_ids:
+            for cid in case_ids:
+                try:
+                    await self._mcp_call("muninn_read", {"id": cid, "vault": v})
+                except Exception as e:
+                    logger.warning("Failed to re-activate %s: %s", cid, e)
+
+    # ── Stats (REST + MCP) ──────────────────────────────────────────
+
+    async def get_stats(self, vault: str = "default") -> dict[str, Any]:
+        """Get vault statistics from MuninnDB."""
+        v = vault or self.default_vault
+        http = await self._get_http()
+        resp = await http.get("/api/stats", params={"vault": v})
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_contradictions(self, vault: str = "default") -> list[dict[str, Any]]:
+        """Get engrams linked with 'contradicts' relation."""
+        v = vault or self.default_vault
+        result = await self._mcp_call("muninn_contradictions", {"vault": v})
+        if isinstance(result, list):
+            return result
+        return []
+
+    # ── Lifecycle ───────────────────────────────────────────────────
 
     async def health_check(self) -> bool:
         try:
