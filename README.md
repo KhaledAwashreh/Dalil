@@ -26,8 +26,8 @@ A **service pipeline** — not a chatbot, not a persona, not an agent graph.
 | Stage | What happens |
 |-------|-------------|
 | **Ingest** | Confluence, CSV, PDF → normalized, chunked, enriched |
-| **Store** | Structured consulting cases → MuninnDB engrams |
-| **Retrieve** | Semantic + keyword hybrid search, vault-per-client isolation |
+| **Store** | Structured consulting cases → MuninnDB engrams via MCP (with enrichment) |
+| **Retrieve** | 6-phase cognitive pipeline with graph traversal (`max_hops`), vault isolation |
 | **Route** | Extensible tool selector (memory retrieval, more tools later) |
 | **Log** | Every request tracked with structured analytics |
 | **Synthesize** | Provider-agnostic LLM (Ollama, OpenAI, vLLM, LM Studio, etc.) |
@@ -118,7 +118,12 @@ No workflow engine framework is needed or used.
 - Supports **vault-per-client isolation** — each client's knowledge is fully separated
 - Runs as a **local binary/server** (single Go binary, zero dependencies)
 
-Dalil talks to MuninnDB through its REST API (`/api/engrams`, `/api/activate`). All MuninnDB-specific logic is isolated behind a `MemoryBackend` abstract interface, making the backend swappable.
+Dalil talks to MuninnDB through two protocols:
+
+- **MCP (port 8750)** for ingestion — `muninn_remember` / `muninn_remember_batch` trigger MuninnDB's enrichment pipeline (entity extraction, knowledge graph edges)
+- **REST (port 8475)** for retrieval — `POST /api/activate` with `max_hops` for spreading activation through the association graph
+
+This means ingested cases automatically get entity extraction and graph edges, and retrieval follows association chains to surface indirectly related knowledge.
 
 <details>
 <summary><strong>ConsultingCase → Engram field mapping</strong></summary>
@@ -203,6 +208,7 @@ Edit `config.json` to set your LLM provider and MuninnDB connection. Key fields:
 {
   "muninn": {
     "base_url": "http://localhost:8476",
+    "mcp_url": "http://localhost:8750/mcp",
     "default_vault": "default"
   },
   "llm": {
@@ -219,6 +225,7 @@ Or use **environment variable overrides** (take priority over the config file):
 |----------|-----------|
 | `DALIL_CONFIG` | Path to config JSON file |
 | `MUNINN_URL` | `muninn.base_url` |
+| `MUNINN_MCP_URL` | `muninn.mcp_url` |
 | `MUNINN_TOKEN` | `muninn.token` |
 | `LLM_API_KEY` | `llm.api_key` |
 | `LLM_BASE_URL` | `llm.base_url` |
@@ -254,6 +261,8 @@ See **[SETUP.md](SETUP.md)** for the full step-by-step guide including LLM provi
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/consult` | Submit a consulting query, get grounded advice |
+| `POST` | `/feedback` | Signal whether consultation results were useful or not |
+| `GET` | `/vault/stats` | Knowledge health metrics (engram count, confidence, contradictions) |
 | `POST` | `/ingest/csv` | Ingest CSV from server file path |
 | `POST` | `/ingest/pdf` | Ingest PDF from server file path |
 | `POST` | `/ingest/csv/upload` | Ingest CSV via multipart upload |
@@ -300,6 +309,27 @@ curl -X POST http://localhost:8000/consult \
 ```
 
 </details>
+
+### Example: Feedback
+
+```bash
+curl -X POST http://localhost:8000/feedback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "a1b2c3d4-...",
+    "signal": "useful"
+  }'
+```
+
+This re-activates the returned cases (boosting their temporal priority) and links them with `supports` relations so they strengthen each other in future queries.
+
+### Example: Vault Stats
+
+```bash
+curl http://localhost:8000/vault/stats?vault=client_acme
+```
+
+Returns engram count, confidence distribution, coherence scores, and contradiction count.
 
 ---
 
@@ -350,12 +380,15 @@ dalil/
 
 ## Roadmap
 
+- [x] MCP ingestion with enrichment pipeline (entity extraction, graph edges)
+- [x] Spreading activation via `max_hops` on retrieval
+- [x] Feedback loop (re-activation, case linking, archival)
+- [x] Vault health stats with contradiction detection
 - [ ] LLM-based entity extraction and summarization
 - [ ] API authentication and authorization
 - [ ] WebSocket endpoint for streaming responses
 - [ ] Prometheus metrics exporter
 - [ ] Integration tests with live MuninnDB
-- [ ] PostgreSQL support for structured data queries
 - [ ] CI/CD pipeline
 
 ---
