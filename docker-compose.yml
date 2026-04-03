@@ -8,6 +8,10 @@ services:
   muninndb:
     image: ghcr.io/scrypster/muninndb:latest
     container_name: dalil-muninndb
+    environment:
+      # Embedding — set EMBED_PROVIDER and EMBED_API_KEY in .env
+      # Supported: MUNINN_JINA_KEY, MUNINN_OPENAI_KEY, MUNINN_COHERE_KEY, etc.
+      MUNINN_OPENAI_KEY: "${EMBED_API_KEY:-}"
     ports:
       - "8000:8000"   # Dalil API (shared network namespace)
       - "8474:8474"   # Internal API
@@ -36,15 +40,17 @@ services:
       MUNINN_URL: "http://127.0.0.1:8476"
       MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
 
-      # LLM configuration — host.docker.internal reaches Ollama on host
+      # LLM configuration — set in config.json or via env vars
       LLM_API_KEY: "${LLM_API_KEY:-}"
-      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434/v1}"
-      LLM_MODEL: "${LLM_MODEL:-mistral}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
 
-      # Optional: point to a config file mounted into the container
-      DALIL_CONFIG: "${DALIL_CONFIG:-}"
+      # Config file — mounted into container
+      DALIL_CONFIG: "/app/config.json"
     volumes:
       - dalil-logs:/app/logs
+      - ./.dalil:/app/.dalil:ro
+      - ./config.json:/app/config.json:ro
     # Share MuninnDB's network namespace so 127.0.0.1 reaches MuninnDB
     network_mode: "service:muninndb"
     depends_on:
@@ -64,13 +70,15 @@ services:
       MUNINN_URL: "http://127.0.0.1:8476"
       MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
       LLM_API_KEY: "${LLM_API_KEY:-}"
-      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434/v1}"
-      LLM_MODEL: "${LLM_MODEL:-mistral}"
-      DALIL_CONFIG: "${DALIL_CONFIG:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      DALIL_CONFIG: "/app/config.json"
     volumes:
       # Mount local source for live editing — changes reflect immediately
       - ./dalil:/app/dalil
       - dalil-logs:/app/logs
+      - ./.dalil:/app/.dalil:ro
+      - ./config.json:/app/config.json:ro
     network_mode: "service:muninndb"
     depends_on:
       muninndb:
