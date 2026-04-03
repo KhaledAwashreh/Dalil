@@ -1,3 +1,3 @@
-from dalil.api.main import main
+from dalil.cli import cli
 
-main()
+cli()
