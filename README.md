@@ -279,9 +279,11 @@ Vault API keys are stored in `.dalil/vaults.json` and automatically used for per
 
 ## Configuration
 
-### config.json
+### config.json (example)
 
-```json
+Copy `dalil/config/config.example.json` to `config.json` and edit to match your setup.
+
+```jsonc
 {
   "muninn": {
     "base_url": "http://localhost:8476",
@@ -289,20 +291,28 @@ Vault API keys are stored in `.dalil/vaults.json` and automatically used for per
     "default_vault": "default",
     "timeout": 60.0
   },
+
+  // LLM — optional. Remove this section or set "model": "" for retrieval-only mode.
   "llm": {
-    "type": "api",
-    "provider": "ollama",
-    "model": "deepseek-v3.1:671b-cloud",
-    "api_key": "",
-    "base_url": "http://localhost:11434/v1",
-    "temperature": 0.3,
-    "max_tokens": 2048
+    "type": "api",                            // "api" | "local"
+    "provider": "ollama",                     // openai, anthropic, ollama, deepseek,
+                                              // groq, together, mistral, fireworks
+    "model": "deepseek-v3.1:671b-cloud",      // model name for the provider
+    "api_key": "",                            // required for cloud providers
+    "base_url": "http://localhost:11434/v1",  // auto-resolved from provider if empty
+    "temperature": 0.3,                       // 0.0–1.0
+    "max_tokens": 2048                        // max response tokens
   },
+
+  // Embeddings — handled by MuninnDB. Set provider + api_key here,
+  // Dalil passes the key to MuninnDB via the correct env var.
   "embeddings": {
-    "provider": "openai",
-    "api_key": "",
-    "model_name": ""
+    "provider": "openai",                     // openai, jina, cohere, google,
+                                              // mistral, voyage (or empty for local/ollama)
+    "api_key": "",                            // required for cloud providers
+    "model_name": ""                          // optional — MuninnDB uses provider default if empty
   },
+
   "ingestion": {
     "chunk_size": 1000,
     "chunk_overlap": 200
@@ -310,7 +320,8 @@ Vault API keys are stored in `.dalil/vaults.json` and automatically used for per
 }
 ```
 
-To run in **retrieval-only mode** (no LLM), set `"model": ""` or remove the `llm` section entirely.
+> **Retrieval-only mode:** set `"model": ""` in the `llm` section (or remove it entirely).
+> Dalil will return full case content, scores, and sources without an LLM recommendation.
 
 ### Environment variable overrides
 
@@ -336,13 +347,9 @@ LLM_API_KEY=
 LLM_BASE_URL=http://host.docker.internal:11434/v1
 LLM_MODEL=deepseek-v3.1:671b-cloud
 
-# Embedding — set only the key for your provider
-MUNINN_OPENAI_KEY=sk-proj-...
-# MUNINN_JINA_KEY=
-# MUNINN_COHERE_KEY=
-# MUNINN_GOOGLE_KEY=
-# MUNINN_MISTRAL_KEY=
-# MUNINN_VOYAGE_KEY=
+# Embedding — provider + key, Dalil routes to the correct MuninnDB env var
+EMBED_PROVIDER=openai        # openai, jina, cohere, google, mistral, voyage
+EMBED_API_KEY=sk-proj-...
 ```
 
 ---
