@@ -30,8 +30,8 @@ A **service pipeline** — not a chatbot, not a persona, not an agent graph.
 | **Retrieve** | 6-phase cognitive pipeline with graph traversal (`max_hops`), vault isolation |
 | **Route** | Extensible tool selector (memory retrieval, more tools later) |
 | **Log** | Every request tracked with structured analytics |
-| **Synthesize** | Provider-agnostic LLM (Ollama, OpenAI, vLLM, LM Studio, etc.) |
-| **Deliver** | FastAPI → structured JSON with sources, confidence, reasoning |
+| **Synthesize** | Provider-agnostic LLM (optional — runs retrieval-only without one) |
+| **Deliver** | FastAPI → structured JSON with full case content, sources, confidence, reasoning |
 
 ---
 
@@ -50,9 +50,9 @@ flowchart TD
 
     MDB --> AN[3. Log Analytics Event]
     AN --> PB[4. Prompt Builder]
-    PB --> LLM[5. LLM Adapter]
+    PB --> LLM[5. LLM Adapter<br><small>optional</small>]
     LLM --> RF[6. Response Formatter]
-    RF --> RES([Structured JSON Response])
+    RF --> RES([Structured JSON Response<br><small>full case content included</small>])
 
     style Client fill:#f9f9f9,stroke:#333
     style API fill:#009688,color:#fff
@@ -113,7 +113,7 @@ No workflow engine framework is needed or used.
 [MuninnDB](https://github.com/scrypster/muninndb) is Dalil's sole persistent data store. It is a cognitive database that:
 
 - Stores consulting cases as **engrams** — its native memory unit
-- Handles **embeddings internally** (bundled all-MiniLM-L6-v2 by default, configurable to OpenAI, Ollama, Voyage, Cohere, Jina, Mistral, Google)
+- Handles **embeddings internally** — configurable to OpenAI, Jina, Cohere, Google, Mistral, Voyage, or local Ollama
 - Provides **semantic + full-text hybrid search** via its ACTIVATE pipeline with ACT-R scoring, Hebbian co-activation, and graph traversal
 - Supports **vault-per-client isolation** — each client's knowledge is fully separated
 - Runs as a **local binary/server** (single Go binary, zero dependencies)
@@ -150,20 +150,28 @@ Structured case fields (problem, solution, outcome, industry, source, etc.) are 
 
 - **Python 3.10+**
 - **MuninnDB** (see below)
-- **An LLM provider** (Ollama, OpenAI, Anthropic, vLLM, etc.)
+- **An LLM provider** (optional — Dalil runs retrieval-only without one)
 
 ### 1. Install MuninnDB
 
 Pick one method:
 
-**Option A — Install script (macOS / Linux)**
+**Option A — Docker Compose (recommended)**
+
+```bash
+docker compose up
+```
+
+This starts both MuninnDB and the Dalil API. See [Configuration](#configuration) for setup.
+
+**Option B — Install script (macOS / Linux)**
 
 ```bash
 curl -sSL https://muninndb.com/install.sh | sh
 muninn init && muninn start
 ```
 
-**Option B — PowerShell (Windows)**
+**Option C — PowerShell (Windows)**
 
 ```powershell
 irm https://muninndb.com/install.ps1 | iex
@@ -171,7 +179,7 @@ muninn init
 muninn start
 ```
 
-**Option C — Docker (any OS)**
+**Option D — Docker standalone**
 
 ```bash
 docker run -d \
@@ -179,13 +187,6 @@ docker run -d \
   -p 8474:8474 -p 8475:8475 -p 8476:8476 -p 8477:8477 -p 8750:8750 \
   -v muninndb-data:/data \
   ghcr.io/scrypster/muninndb:latest
-```
-
-**Option D — Bootstrap script (included)**
-
-```bash
-chmod +x dalil/scripts/bootstrap_muninn.sh
-./dalil/scripts/bootstrap_muninn.sh
 ```
 
 ### 2. Install Python dependencies
@@ -196,30 +197,124 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure
+### 3. Install the CLI
+
+```bash
+pip install -e .
+```
+
+This gives you the `dalil` command for vault management and service control.
+
+### 4. Configure
 
 ```bash
 cp dalil/config/config.example.json config.json
 ```
 
-Edit `config.json` to set your LLM provider and MuninnDB connection. Key fields:
+Edit `config.json` — see [Configuration](#configuration) below.
+
+### 5. Run
+
+**With Docker Compose (production):**
+
+```bash
+docker compose up
+```
+
+**Standalone (development):**
+
+```bash
+DALIL_CONFIG=config.json uvicorn dalil.api.main:app --host 0.0.0.0 --port 8000
+```
+
+### 6. Create a vault and ingest data
+
+```bash
+# Create a vault (auto-generates an API key for MuninnDB auth)
+dalil vault create my-project
+
+# Check status
+dalil status
+
+# Ingest data via the API
+curl -X POST http://localhost:8000/ingest/csv/upload \
+  -F "file=@data/cases.csv" \
+  -F "vault=my-project"
+
+# Query
+curl -X POST http://localhost:8000/consult \
+  -H "Content-Type: application/json" \
+  -d '{"problem": "Your question here", "vault": "my-project"}'
+```
+
+### 7. Run tests
+
+```bash
+pytest dalil/tests/ -v
+```
+
+All 21 tests pass without external services.
+
+See **[SETUP.md](SETUP.md)** for the full step-by-step guide including LLM provider setup, ingestion examples, and troubleshooting.
+
+---
+
+## CLI
+
+Dalil includes a Click-based CLI for vault management and service control:
+
+```bash
+dalil status                    # Check MuninnDB container status
+dalil serve                     # Start the Dalil API server
+dalil vault list                # List all vaults
+dalil vault create my-project   # Create a vault (auto-generates API key)
+dalil vault delete my-project   # Delete a vault
+dalil vault clone src dest      # Clone a vault
+dalil vault key my-project      # Show the API key for a vault
+```
+
+Vault API keys are stored in `.dalil/vaults.json` and automatically used for per-vault authentication with MuninnDB.
+
+---
+
+## Configuration
+
+### config.json
 
 ```json
 {
   "muninn": {
     "base_url": "http://localhost:8476",
     "mcp_url": "http://localhost:8750/mcp",
-    "default_vault": "default"
+    "default_vault": "default",
+    "timeout": 60.0
   },
   "llm": {
+    "type": "api",
     "provider": "ollama",
-    "model": "mistral",
-    "base_url": "http://localhost:11434/v1"
+    "model": "deepseek-v3.1:671b-cloud",
+    "api_key": "",
+    "base_url": "http://localhost:11434/v1",
+    "temperature": 0.3,
+    "max_tokens": 2048
+  },
+  "embeddings": {
+    "provider": "openai",
+    "api_key": "",
+    "model_name": ""
+  },
+  "ingestion": {
+    "chunk_size": 1000,
+    "chunk_overlap": 200
   }
 }
 ```
 
-Or use **environment variable overrides** (take priority over the config file):
+To run in **retrieval-only mode** (no LLM), set `"model": ""` or remove the `llm` section entirely.
+
+### Environment variable overrides
+
+Environment variables take priority over `config.json` (empty values are ignored):
 
 | Variable | Overrides |
 |----------|-----------|
@@ -230,29 +325,62 @@ Or use **environment variable overrides** (take priority over the config file):
 | `LLM_API_KEY` | `llm.api_key` |
 | `LLM_BASE_URL` | `llm.base_url` |
 | `LLM_MODEL` | `llm.model` |
+| `EMBED_PROVIDER` | `embeddings.provider` |
+| `EMBED_API_KEY` | `embeddings.api_key` |
 
-### 4. Run
+### .env file (Docker Compose)
 
-```bash
-DALIL_CONFIG=config.json uvicorn dalil.api.main:app --host 0.0.0.0 --port 8000
+```env
+# LLM
+LLM_API_KEY=
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+LLM_MODEL=deepseek-v3.1:671b-cloud
+
+# Embedding — set only the key for your provider
+MUNINN_OPENAI_KEY=sk-proj-...
+# MUNINN_JINA_KEY=
+# MUNINN_COHERE_KEY=
+# MUNINN_GOOGLE_KEY=
+# MUNINN_MISTRAL_KEY=
+# MUNINN_VOYAGE_KEY=
 ```
 
-Windows (PowerShell):
+---
 
-```powershell
-$env:DALIL_CONFIG = "config.json"
-uvicorn dalil.api.main:app --host 0.0.0.0 --port 8000
-```
+## LLM Providers
 
-### 5. Run tests
+The LLM layer is fully provider-agnostic. Any OpenAI-compatible API works. The LLM is **optional** — without one, Dalil returns raw retrieval results (cases, scores, sources) with no synthesized recommendation.
 
-```bash
-pytest dalil/tests/ -v
-```
+| Provider | Config |
+|----------|--------|
+| **Ollama** (local, free) | `"provider": "ollama", "base_url": "http://localhost:11434/v1"` |
+| **OpenAI** | `"provider": "openai", "api_key": "sk-..."` |
+| **Anthropic (Claude)** | `"provider": "anthropic", "api_key": "sk-ant-...", "model": "claude-sonnet-4-20250514"` |
+| **DeepSeek** | `"provider": "deepseek", "api_key": "sk-..."` |
+| **Groq** | `"provider": "groq", "api_key": "gsk_..."` |
+| **Together** | `"provider": "together", "api_key": "..."` |
+| **Mistral** | `"provider": "mistral", "api_key": "..."` |
+| **Fireworks** | `"provider": "fireworks", "api_key": "..."` |
+| **vLLM / LM Studio** | `"base_url": "http://localhost:8000/v1"` |
+| **HuggingFace** (local) | `"type": "local", "model": "mistralai/Mistral-7B-Instruct-v0.2"` |
 
-All 21 tests pass without external services.
+When `provider` is set and `base_url` is empty, Dalil auto-resolves the correct API endpoint.
 
-See **[SETUP.md](SETUP.md)** for the full step-by-step guide including LLM provider setup, ingestion examples, and troubleshooting.
+## Embedding Providers
+
+MuninnDB handles embeddings internally. Set the API key for your provider in `.env`:
+
+| Provider | .env variable | Notes |
+|----------|--------------|-------|
+| **OpenAI** | `MUNINN_OPENAI_KEY` | text-embedding-3-small (default) |
+| **Jina** | `MUNINN_JINA_KEY` | |
+| **Cohere** | `MUNINN_COHERE_KEY` | |
+| **Google** | `MUNINN_GOOGLE_KEY` | |
+| **Mistral** | `MUNINN_MISTRAL_KEY` | |
+| **Voyage** | `MUNINN_VOYAGE_KEY` | |
+| **Ollama** (local) | None needed | Uses bundled model, runs on CPU |
+
+Only one embedding provider key should be set. MuninnDB auto-detects which provider to use based on which key is present.
 
 ---
 
@@ -296,7 +424,15 @@ curl -X POST http://localhost:8000/consult \
       "title": "Fintech Onboarding Optimization",
       "type": "engagement",
       "industry": "fintech",
-      "score": 0.87
+      "score": 0.87,
+      "content": "Full case content with all details...",
+      "summary": "...",
+      "problem": "High onboarding churn in mid-market fintech",
+      "solution": "Simplified KYC flow, progressive onboarding",
+      "outcome": "Churn reduced from 18% to 9%",
+      "context": "...",
+      "tags": ["fintech", "churn", "onboarding"],
+      "metadata": {}
     }
   ],
   "sources": [
@@ -307,6 +443,8 @@ curl -X POST http://localhost:8000/consult \
   "reasoning_summary": "Based on similar engagements..."
 }
 ```
+
+When no LLM is configured, `recommendation` and `reasoning_summary` are empty, but `similar_cases` still includes full case content for direct consumption.
 
 </details>
 
@@ -333,36 +471,25 @@ Returns engram count, confidence distribution, coherence scores, and contradicti
 
 ---
 
-## LLM Providers
-
-Dalil's LLM layer is fully provider-agnostic. Any OpenAI-compatible API works.
-
-| Provider | Config |
-|----------|--------|
-| **Ollama** (local, free) | `"provider": "ollama", "base_url": "http://localhost:11434/v1"` |
-| **OpenAI** | `"provider": "openai", "api_key": "sk-..."` |
-| **Anthropic (Claude)** | `"provider": "anthropic", "api_key": "sk-ant-...", "model": "claude-sonnet-4-20250514"` |
-| **vLLM / LM Studio** | `"base_url": "http://localhost:8000/v1"` |
-| **HuggingFace** (local) | `"type": "local", "model": "mistralai/Mistral-7B-Instruct-v0.2"` |
-
-See [SETUP.md — LLM Provider Examples](SETUP.md#llm-provider-examples) for full config snippets.
-
----
-
 ## Project Structure
 
 ```
 dalil/
   api/                  # FastAPI endpoints and request/response models
+  cli.py                # Click CLI for vault management and service control
   services/             # ConsultService orchestrator, ingestion, prompt builder
   memory/               # MemoryBackend interface, MuninnDB adapter, case schema
   ingestion/            # Loaders (CSV, PDF, Confluence), normalizer, chunker, enricher
   tools/                # Tool selector (extensible for future data tools)
   llm/                  # LLM interface, API/local implementations, factory
   analytics/            # Structured logging, metrics, event definitions
-  config/               # Settings loader and example config
+  config/               # Settings loader with provider mappings
   tests/                # 21 unit tests
   scripts/              # MuninnDB bootstrap script
+.dalil/                 # Per-vault API keys (auto-generated, gitignored)
+config.json             # Main configuration file
+pyproject.toml          # Package definition with console_scripts entry point
+docker-compose.yml      # Production + dev containers
 ```
 
 ---
@@ -375,6 +502,7 @@ dalil/
 - **No auth** — no authentication middleware on the API
 - **No rate limiting** — on API or MuninnDB calls
 - **Single-process** — no distributed task queue for heavy ingestion
+- **No grounding validation** — LLM output is not yet validated against retrieved cases ([#6](https://github.com/KhaledAwashreh/Dalil/issues/6))
 
 ---
 
@@ -384,6 +512,11 @@ dalil/
 - [x] Spreading activation via `max_hops` on retrieval
 - [x] Feedback loop (re-activation, case linking, archival)
 - [x] Vault health stats with contradiction detection
+- [x] CLI for vault management with per-vault API key auth
+- [x] Retrieval-only mode (LLM optional)
+- [x] Full case content in consult response
+- [x] Dynamic LLM and embedding provider support
+- [ ] Grounding validation step ([#6](https://github.com/KhaledAwashreh/Dalil/issues/6))
 - [ ] LLM-based entity extraction and summarization
 - [ ] API authentication and authorization
 - [ ] WebSocket endpoint for streaming responses
