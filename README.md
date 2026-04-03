@@ -471,6 +471,43 @@ Returns engram count, confidence distribution, coherence scores, and contradicti
 
 ---
 
+## Claude Code Integration
+
+Dalil ships with 6 slash commands for [Claude Code](https://claude.ai/claude-code), enabling AI-assisted workflows that are grounded in your knowledge base.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/consult <problem>` | Query Dalil for relevant cases and grounded recommendations |
+| `/ingest <file>` | Ingest CSV or PDF files into a vault |
+| `/feedback <request_id> <useful\|not_useful>` | Send feedback on a consultation to improve future results |
+| `/check` | Check vault health — engram count, contradictions, confidence distribution |
+| `/context-gatherer <task>` | Multi-query context collection with cross-referencing and contradiction detection |
+| `/doc-writer <topic>` | Generate documentation grounded in Dalil's knowledge base |
+
+### Usage
+
+All commands accept `--vault` and `--tags` flags:
+
+```
+/consult "What retention strategies worked for fintech clients?" --vault=client_acme --tags=fintech,churn
+/ingest data/cases.csv --vault=client_acme --tags=engagement
+/check --vault=client_acme
+/feedback a1b2c3d4-... useful --comment="Accurate recommendation"
+```
+
+### Sub-agent workflows
+
+`/context-gatherer` and `/doc-writer` are composable sub-agents:
+
+- **Context Gatherer** — decomposes a task into sub-questions, runs multiple consultations, cross-references cases, flags contradictions, and produces a structured context package
+- **Doc Writer** — uses the context gatherer to collect evidence, then writes documentation where every claim traces back to a Dalil case. Sections without evidence are marked `[NEEDS INPUT]`
+
+Both support `--depth=deep` for more thorough analysis.
+
+---
+
 ## Project Structure
 
 ```
