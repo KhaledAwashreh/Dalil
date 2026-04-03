@@ -16,7 +16,7 @@ class MuninnSettings:
     mcp_url: str = "http://localhost:8750/mcp"
     token: str = ""
     default_vault: str = "default"
-    timeout: float = 10.0
+    timeout: float = 60.0
 
 
 @dataclass
@@ -106,12 +106,12 @@ def load_settings(config_path: str | None = None) -> Settings:
         settings.api_host = data.get("api_host", settings.api_host)
         settings.api_port = data.get("api_port", settings.api_port)
 
-    # Environment variable overrides (highest priority)
-    settings.muninn.base_url = os.environ.get("MUNINN_URL", settings.muninn.base_url)
-    settings.muninn.mcp_url = os.environ.get("MUNINN_MCP_URL", settings.muninn.mcp_url)
-    settings.muninn.token = os.environ.get("MUNINN_TOKEN", settings.muninn.token)
-    settings.llm.api_key = os.environ.get("LLM_API_KEY", settings.llm.api_key)
-    settings.llm.base_url = os.environ.get("LLM_BASE_URL", settings.llm.base_url)
-    settings.llm.model = os.environ.get("LLM_MODEL", settings.llm.model)
+    # Environment variable overrides (highest priority, only if non-empty)
+    settings.muninn.base_url = os.environ.get("MUNINN_URL") or settings.muninn.base_url
+    settings.muninn.mcp_url = os.environ.get("MUNINN_MCP_URL") or settings.muninn.mcp_url
+    settings.muninn.token = os.environ.get("MUNINN_TOKEN") or settings.muninn.token
+    settings.llm.api_key = os.environ.get("LLM_API_KEY") or settings.llm.api_key
+    settings.llm.base_url = os.environ.get("LLM_BASE_URL") or settings.llm.base_url
+    settings.llm.model = os.environ.get("LLM_MODEL") or settings.llm.model
 
     return settings
