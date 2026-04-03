@@ -6,6 +6,7 @@ from dalil.memory.cases_schema import (
     CaseType,
     ConsultingCase,
     Entity,
+    Relationship,
     SourceType,
 )
 
@@ -88,3 +89,113 @@ def test_from_engram_plain_content():
     assert case.title == "Plain engram"
     assert case.content == "Just plain text without structured data."
     assert case.type == CaseType.OTHER
+
+
+def test_to_engram_content_includes_entities_and_relationships():
+    """to_engram_content() includes entities and relationships when present."""
+    case = ConsultingCase(
+        title="Entity Test",
+        content="Content with entities.",
+        entities=[
+            Entity(name="Acme Corp", type="company"),
+            Entity(name="Jane Doe", type="person"),
+        ],
+        relationships=[
+            Relationship(target_id="abc-123", relation="supports", weight=0.7),
+        ],
+    )
+    content = case.to_engram_content()
+    assert "Acme Corp" in content
+    assert "Jane Doe" in content
+    assert "supports" in content
+    assert "abc-123" in content
+
+    # Parse the JSON section to verify structure
+    import json
+
+    parts = content.split("\n\n---\n", 1)
+    assert len(parts) == 2
+    body = json.loads(parts[1])
+    assert len(body["entities"]) == 2
+    assert body["entities"][0]["name"] == "Acme Corp"
+    assert len(body["relationships"]) == 1
+    assert body["relationships"][0]["weight"] == 0.7
+
+
+def test_to_engram_content_omits_entities_when_empty():
+    """to_engram_content() omits entities/relationships keys when empty."""
+    import json
+
+    case = ConsultingCase(title="No Entities", content="Plain content.")
+    content = case.to_engram_content()
+    parts = content.split("\n\n---\n", 1)
+    body = json.loads(parts[1])
+    assert "entities" not in body
+    assert "relationships" not in body
+
+
+def test_to_mcp_arguments_includes_inline_enrichment():
+    """to_mcp_arguments() includes summary, entities, relationships when populated."""
+    case = ConsultingCase(
+        title="MCP Test",
+        content="Content body.",
+        summary="A brief summary",
+        entities=[Entity(name="Widget Inc", type="company")],
+        relationships=[
+            Relationship(target_id="xyz-789", relation="depends_on", weight=0.6),
+        ],
+        tags=["test"],
+        confidence=0.9,
+    )
+    args = case.to_mcp_arguments(vault="test_vault")
+    assert args["vault"] == "test_vault"
+    assert args["concept"] == "MCP Test"
+    assert args["summary"] == "A brief summary"
+    assert len(args["entities"]) == 1
+    assert args["entities"][0]["name"] == "Widget Inc"
+    assert len(args["relationships"]) == 1
+    assert args["relationships"][0]["relation"] == "depends_on"
+    assert args["confidence"] == 0.9
+
+
+def test_to_mcp_arguments_omits_empty_enrichment():
+    """to_mcp_arguments() omits summary/entities/relationships when empty."""
+    case = ConsultingCase(title="Minimal", content="Just content.", tags=["x"])
+    args = case.to_mcp_arguments(vault="v")
+    assert "summary" not in args
+    assert "entities" not in args
+    assert "relationships" not in args
+
+
+def test_from_engram_populates_confidence_from_muninndb():
+    """from_engram() uses the confidence value from MuninnDB response."""
+    engram = {
+        "id": "engram-001",
+        "concept": "High Confidence Case",
+        "content": "Some content.\n\n---\n{\"case_id\": \"c1\", \"type\": \"engagement\", "
+        "\"summary\": \"\", \"context\": \"\", \"problem\": \"\", "
+        "\"solution\": \"\", \"outcome\": \"\", \"industry\": \"\", "
+        "\"client_name\": \"\", \"source\": \"\", \"source_type\": \"manual\", "
+        "\"source_uri\": \"\", \"metadata\": {}}",
+        "tags": [],
+        "confidence": 0.95,
+    }
+    case = ConsultingCase.from_engram(engram)
+    assert case.confidence == 0.95
+
+    # Different confidence value
+    engram["confidence"] = 0.3
+    case2 = ConsultingCase.from_engram(engram)
+    assert case2.confidence == 0.3
+
+
+def test_from_engram_default_confidence():
+    """from_engram() defaults confidence to 0.8 when not present."""
+    engram = {
+        "id": "engram-002",
+        "concept": "No Confidence",
+        "content": "Text only.",
+        "tags": [],
+    }
+    case = ConsultingCase.from_engram(engram)
+    assert case.confidence == 0.8

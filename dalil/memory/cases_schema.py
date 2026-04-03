@@ -73,7 +73,7 @@ class ConsultingCase(BaseModel):
         """Serialize case data into engram content string."""
         import json
 
-        case_body = {
+        case_body: dict[str, Any] = {
             "case_id": self.id,
             "type": self.type.value,
             "summary": self.summary,
@@ -88,17 +88,42 @@ class ConsultingCase(BaseModel):
             "source_uri": self.source_uri,
             "metadata": self.metadata,
         }
+        if self.entities:
+            case_body["entities"] = [
+                {"name": e.name, "type": e.type} for e in self.entities
+            ]
+        if self.relationships:
+            case_body["relationships"] = [
+                {"target_id": r.target_id, "relation": r.relation, "weight": r.weight}
+                for r in self.relationships
+            ]
         return f"{self.content}\n\n---\n{json.dumps(case_body)}"
 
     def to_mcp_arguments(self, vault: str = "default") -> dict[str, Any]:
-        """Convert to MCP muninn_remember arguments."""
-        return {
+        """Convert to MCP muninn_remember arguments.
+
+        Includes inline enrichment fields (summary, entities, relationships)
+        when populated, so MuninnDB can skip its own extraction for those.
+        """
+        args: dict[str, Any] = {
             "vault": vault,
             "concept": self.title[:512],
             "content": self.to_engram_content()[:16384],
             "tags": self.tags,
             "confidence": self.confidence,
         }
+        if self.summary:
+            args["summary"] = self.summary
+        if self.entities:
+            args["entities"] = [
+                {"name": e.name, "type": e.type} for e in self.entities
+            ]
+        if self.relationships:
+            args["relationships"] = [
+                {"target_id": r.target_id, "relation": r.relation, "weight": r.weight}
+                for r in self.relationships
+            ]
+        return args
 
     def to_engram_payload(self, vault: str = "default") -> dict[str, Any]:
         """Convert to MuninnDB REST engram write payload (legacy)."""

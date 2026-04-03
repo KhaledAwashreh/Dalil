@@ -66,6 +66,18 @@ Based on `DOC_TYPE`, plan the document sections:
 **analysis:**
 - Context, Findings, Patterns, Contradictions, Recommendations, Confidence Assessment
 
+### Phase 2.5 — Entity Graph for Coverage
+
+Use the entity graph to ensure comprehensive topic coverage:
+
+```bash
+dalil_url="${DALIL_URL:-http://localhost:8000}"
+curl -sf "${dalil_url}/vault/entities?vault=${VAULT}&entity=${TOPIC_ENTITY}"
+```
+
+Use entity relationships to identify sections or angles that the initial context gathering may have missed.
+Use `/traverse` (muninn_traverse) for relationship mapping between key concepts.
+
 ### Phase 3 — Write Document
 
 For each section:
@@ -73,10 +85,10 @@ For each section:
 1. Identify which cases from the context package are relevant to this section
 2. Write the section content, citing cases inline as `[Case: {title}]`
 3. If no cases support a section, write `[NEEDS INPUT] — no relevant cases found for this section`
-4. Include confidence indicators:
-   - High confidence (score > 0.7, multiple supporting cases)
+4. Include confidence indicators using MuninnDB Bayesian scores and score breakdowns:
+   - High confidence (score > 0.7, multiple supporting cases) — show score breakdown if available
    - Medium confidence (score 0.5-0.7, single case)
-   - Low confidence (score < 0.5) — flag explicitly
+   - Low confidence (score < 0.5) — flag explicitly with breakdown details
 
 ### Phase 4 — Add Metadata
 

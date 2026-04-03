@@ -20,6 +20,10 @@ who need grounded domain context before proceeding.
 Unlike a single `/dalil-consult`, this agent runs multiple queries, cross-references
 results, checks for contradictions, and produces a structured context package.
 
+Can also leverage graph traversal (`/traverse`) for relationship-based exploration,
+session continuity (`/session/recent`) for ongoing context, and entity graph
+(`/vault/entities/*`) for entity-centric exploration.
+
 ## Variables
 
 - `TASK`: `$ARGUMENTS` with flags stripped — description of what the caller is working on (required)
@@ -62,7 +66,18 @@ Prompt: /dalil-consult "${TASK}" --vault=${VAULT} --tags=${TAGS}
 
 Capture the `request_id` and all returned cases.
 
-### Phase 3 — Decompose and Query
+### Phase 3 — Session Continuity
+
+Check for recent session context that may be relevant:
+
+```bash
+dalil_url="${DALIL_URL:-http://localhost:8000}"
+curl -sf "${dalil_url}/session/recent?vault=${VAULT}"
+```
+
+If recent consultations are related to the current task, incorporate their context to avoid redundant queries.
+
+### Phase 4 — Decompose and Query
 
 Break the task into 2-4 sub-questions based on what the primary consultation returned.
 For each sub-question, run a focused consultation:
@@ -77,14 +92,33 @@ Examples of decomposition:
 
 If `--depth=deep`, decompose into up to 6 sub-questions.
 
-### Phase 4 — Cross-Reference
+### Phase 5 — Graph Traversal
+
+For high-relevance cases from previous phases, use `/traverse` to explore connected cases:
+
+```bash
+dalil_url="${DALIL_URL:-http://localhost:8000}"
+curl -sf -X POST "${dalil_url}/traverse" \
+  -H "Content-Type: application/json" \
+  -d "{\"case_id\": \"${CASE_ID}\", \"vault\": \"${VAULT}\", \"depth\": 2}"
+```
+
+Also check the entity graph for entity-centric exploration:
+
+```bash
+curl -sf "${dalil_url}/vault/entities?vault=${VAULT}&entity=${ENTITY_NAME}"
+```
+
+This surfaces related cases that keyword search might miss.
+
+### Phase 6 — Cross-Reference
 
 Compare results across all consultations:
 - Cases that appear in multiple queries → high relevance, note them
 - Cases that contradict each other → flag as contradictions
 - Cases with low confidence (< 0.5) → mark as uncertain
 
-### Phase 5 — Output
+### Phase 7 — Output
 
 Produce a structured context package:
 

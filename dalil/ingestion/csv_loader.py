@@ -16,7 +16,6 @@ import io
 import logging
 from pathlib import Path
 
-from dalil.ingestion.enricher import enrich
 from dalil.ingestion.normalizer import normalize_tags, normalize_text
 from dalil.memory.cases_schema import (
     CaseType,
@@ -69,9 +68,6 @@ def load_csv(
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         tags = normalize_tags(tags + (default_tags or []))
 
-        # Enrich
-        enrichment = enrich(content, existing_tags=tags, existing_industry=row.get("industry", ""))
-
         # Collect extra columns as metadata
         metadata = {
             k: str(v) for k, v in row.items()
@@ -80,9 +76,9 @@ def load_csv(
 
         case_type_str = row.get("type", "")
         try:
-            case_type = CaseType(case_type_str) if case_type_str else enrichment["case_type"]
+            case_type = CaseType(case_type_str) if case_type_str else CaseType.OTHER
         except ValueError:
-            case_type = enrichment["case_type"]
+            case_type = CaseType.OTHER
 
         case = ConsultingCase(
             type=case_type,
@@ -93,9 +89,8 @@ def load_csv(
             problem=row.get("problem", ""),
             solution=row.get("solution", ""),
             outcome=row.get("outcome", ""),
-            tags=enrichment["tags"],
-            entities=enrichment["entities"],
-            industry=enrichment["industry"],
+            tags=tags,
+            industry=row.get("industry", ""),
             client_name=row.get("client_name", ""),
             source="csv",
             source_type=SourceType.CSV,

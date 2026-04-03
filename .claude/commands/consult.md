@@ -28,7 +28,8 @@ Works as a standalone command or as a sub-agent called by other workflows.
 
 - DO NOT fabricate cases or recommendations — only use what Dalil returns
 - DO include the `request_id` in your output so feedback can be given later
-- DO note confidence scores — flag anything below 0.5 as low confidence
+- DO note confidence scores — these are MuninnDB Bayesian scores, not heuristics. Flag anything below 0.5 as low confidence
+- DO present score breakdowns when available (`score_breakdowns` field) — shows how the score was composed
 - If Dalil is unreachable, say so and stop — do not guess
 
 ---
@@ -75,9 +76,11 @@ Parse the response and present:
 1. **Request ID** — for feedback later
 2. **Recommendation** — the LLM-generated advice
 3. **Similar Cases** — list with title, type, industry, score
-4. **Sources** — where the knowledge came from
-5. **Confidence** — overall confidence score, flag if < 0.5
-6. **Contradictions** — if any cases in the result contradict each other, note it
+4. **Score Breakdowns** — if `score_breakdowns` is present, show per-case scoring factors
+5. **Sources** — where the knowledge came from
+6. **Confidence** — MuninnDB Bayesian confidence score, flag if < 0.5
+7. **Contradictions** — if any cases in the result contradict each other, note it
+8. **Traversal Hint** — if results suggest deeper relationships, suggest using `/traverse` for graph exploration
 
 ### Step 5 — Output Format
 
@@ -96,9 +99,13 @@ Parse the response and present:
 |-------|------|----------|-------|
 | ...   | ...  | ...      | ...   |
 
+### Score Breakdowns
+{If score_breakdowns present, show per-case breakdown of scoring factors}
+
 ### Sources
 - {source_type}: {source_title}
 
 ---
-To give feedback: `/dalil-feedback {request_id} useful` or `/dalil-feedback {request_id} not_useful`
+To give feedback: `/dalil-feedback {request_id} [{case_id: "...", relevant: true/false}, ...]`
+To explore related cases: `POST /traverse` with a case ID from above
 ```

@@ -4,7 +4,6 @@ import io
 
 from dalil.ingestion.chunker import chunk_text
 from dalil.ingestion.csv_loader import load_csv
-from dalil.ingestion.enricher import auto_tag, detect_industry, enrich
 from dalil.ingestion.normalizer import normalize_tags, normalize_text
 
 
@@ -34,32 +33,27 @@ def test_chunk_text_long():
     assert len(chunks) >= 2
 
 
-def test_detect_industry():
-    assert detect_industry("Our fintech client needed...") == "fintech"
-    assert detect_industry("Healthcare provider...") == "healthcare"
-    assert detect_industry("Generic text") == ""
-
-
-def test_auto_tag():
-    tags = auto_tag("The client faced high churn rates and needed a retention strategy.")
-    assert "churn" in tags
-    assert "retention" in tags
-
-
-def test_enrich():
-    result = enrich("Fintech company saw 15% churn reduction after onboarding changes.")
-    assert result["industry"] == "fintech"
-    assert "churn" in result["tags"]
-    assert "onboarding" in result["tags"]
-
-
 def test_csv_loader():
     csv_content = io.StringIO(
         "title,content,tags,industry\n"
-        "Test Case,Some content about fintech churn,fintech;churn,fintech\n"
+        "Test Case,Some content about fintech churn,fintech,fintech\n"
         "Another Case,Healthcare engagement,healthcare,healthcare\n"
     )
     cases = load_csv(csv_content)
     assert len(cases) == 2
     assert cases[0].title == "Test Case"
     assert cases[1].industry == "healthcare"
+
+
+def test_csv_loader_preserves_source_fields():
+    """Source data fields (entities, summary) pass through without heuristic enrichment."""
+    csv_content = io.StringIO(
+        "title,content,summary,industry\n"
+        "Case A,Content about banking,Banking summary,banking\n"
+    )
+    cases = load_csv(csv_content)
+    assert len(cases) == 1
+    assert cases[0].summary == "Banking summary"
+    assert cases[0].industry == "banking"
+    # No heuristic entities should be injected
+    assert cases[0].entities == []

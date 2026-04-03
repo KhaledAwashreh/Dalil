@@ -11,7 +11,6 @@ import logging
 from pathlib import Path
 
 from dalil.ingestion.chunker import chunk_text
-from dalil.ingestion.enricher import enrich
 from dalil.ingestion.normalizer import normalize_tags, normalize_text
 from dalil.memory.cases_schema import ConsultingCase, SourceType
 
@@ -54,16 +53,12 @@ def load_pdf(
 
     cases: list[ConsultingCase] = []
     for i, chunk in enumerate(chunks):
-        enrichment = enrich(chunk, existing_tags=default_tags)
         title = f"{pdf_title} (Part {i + 1}/{len(chunks)})" if len(chunks) > 1 else pdf_title
 
         case = ConsultingCase(
-            type=enrichment["case_type"],
             title=title,
             content=chunk,
-            tags=normalize_tags(enrichment["tags"]),
-            entities=enrichment["entities"],
-            industry=enrichment["industry"],
+            tags=normalize_tags(default_tags or []),
             source="pdf",
             source_type=SourceType.PDF,
             source_uri=source_uri,

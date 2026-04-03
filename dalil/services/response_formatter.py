@@ -15,6 +15,7 @@ def format_response(
     cases: list[ConsultingCase] | None = None,
     scores: list[float] | None = None,
     tools_used: list[str] | None = None,
+    score_breakdowns: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
     """Build the structured JSON response for /consult."""
     similar_cases: list[dict[str, Any]] = []
@@ -47,19 +48,19 @@ def format_response(
                 "title": case.title,
             })
 
-    # Simple confidence heuristic: based on number and quality of cases
+    # Confidence: average of MuninnDB's native Bayesian confidence scores
     confidence = 0.0
     if cases:
-        avg_score = sum(scores or [0.0]) / max(len(scores or []), 1)
-        coverage = min(len(cases) / 5.0, 1.0)  # 5+ cases = full coverage
-        confidence = round(0.4 * avg_score + 0.6 * coverage, 2)
+        confidence = round(
+            sum(c.confidence for c in cases) / len(cases), 2
+        )
 
     # Extract reasoning summary (first paragraph of recommendation)
     reasoning = recommendation.split("\n\n")[0] if recommendation else ""
     if len(reasoning) > 300:
         reasoning = reasoning[:297] + "..."
 
-    return {
+    result: dict[str, Any] = {
         "request_id": request_id,
         "recommendation": recommendation,
         "similar_cases": similar_cases,
@@ -68,3 +69,6 @@ def format_response(
         "confidence": confidence,
         "reasoning_summary": reasoning,
     }
+    if score_breakdowns is not None:
+        result["score_breakdowns"] = score_breakdowns
+    return result

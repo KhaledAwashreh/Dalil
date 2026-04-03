@@ -21,14 +21,13 @@
 
 ## What This Is
 
-A **service pipeline** — not a chatbot, not a persona, not an agent graph.
+A **thin orchestrator on MuninnDB** — not a chatbot, not a persona, not an agent graph.
 
 | Stage | What happens |
 |-------|-------------|
-| **Ingest** | Confluence, CSV, PDF → normalized, chunked, enriched |
-| **Store** | Structured consulting cases → MuninnDB engrams via MCP (with enrichment) |
-| **Retrieve** | 6-phase cognitive pipeline with graph traversal (`max_hops`), vault isolation |
-| **Route** | Extensible tool selector (memory retrieval, more tools later) |
+| **Ingest** | Confluence, CSV, PDF → normalized, chunked |
+| **Store** | Cases → MuninnDB via MCP (`muninn_remember`) — MuninnDB handles enrichment (entities, graph edges) |
+| **Retrieve** | MuninnDB ACTIVATE pipeline (semantic + full-text hybrid search, graph traversal) |
 | **Log** | Every request tracked with structured analytics |
 | **Synthesize** | Provider-agnostic LLM (optional — runs retrieval-only without one) |
 | **Deliver** | FastAPI → structured JSON with full case content, sources, confidence, reasoning |
@@ -72,9 +71,8 @@ flowchart LR
 
     L --> N[Normalizer]
     N --> CH[Chunker]
-    CH --> EN[Enricher<br><small>tags, entities,<br>industry detection</small>]
-    EN --> CASE[ConsultingCase]
-    CASE --> MB[(MuninnDB<br>Vault)]
+    CH --> CASE[ConsultingCase]
+    CASE --> MB[(MuninnDB<br>Vault<br><small>enrichment, entities,<br>graph edges</small>)]
 
     style MB fill:#7b1fa2,color:#fff
     style CASE fill:#1565c0,color:#fff
@@ -120,10 +118,11 @@ No workflow engine framework is needed or used.
 
 Dalil talks to MuninnDB through two protocols:
 
-- **MCP (port 8750)** for ingestion — `muninn_remember` / `muninn_remember_batch` trigger MuninnDB's enrichment pipeline (entity extraction, knowledge graph edges)
+- **MCP (port 8750)** for ingestion — `muninn_remember` / `muninn_remember_batch` delegate enrichment (entity extraction, knowledge graph edges, Bayesian confidence) entirely to MuninnDB
 - **REST (port 8475)** for retrieval — `POST /api/activate` with `max_hops` for spreading activation through the association graph
+- **MCP tools** for feedback (`muninn_feedback`, `muninn_link`), confidence explanation (`muninn_explain`), vault health (`muninn_status`, `muninn_contradictions`), and lifecycle (`muninn_evolve`, `muninn_consolidate`)
 
-This means ingested cases automatically get entity extraction and graph edges, and retrieval follows association chains to surface indirectly related knowledge.
+Dalil is a thin orchestrator: loaders normalize data into cases, MuninnDB handles enrichment and storage, ACTIVATE handles retrieval, and an optional LLM synthesizes the results.
 
 <details>
 <summary><strong>ConsultingCase → Engram field mapping</strong></summary>
@@ -253,7 +252,7 @@ curl -X POST http://localhost:8000/consult \
 pytest dalil/tests/ -v
 ```
 
-All 21 tests pass without external services.
+All 27 tests pass without external services.
 
 See **[SETUP.md](SETUP.md)** for the full step-by-step guide including LLM provider setup, ingestion examples, and troubleshooting.
 
@@ -396,8 +395,17 @@ Only one embedding provider key should be set. MuninnDB auto-detects which provi
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/consult` | Submit a consulting query, get grounded advice |
-| `POST` | `/feedback` | Signal whether consultation results were useful or not |
-| `GET` | `/vault/stats` | Knowledge health metrics (engram count, confidence, contradictions) |
+| `POST` | `/feedback` | Per-case relevance feedback (uses `muninn_feedback` + `muninn_link`) |
+| `GET` | `/vault/stats` | Knowledge health (coherence score, orphan ratio, duplication pressure, contradictions) |
+| `POST` | `/traverse` | BFS graph traversal from a starting engram |
+| `GET` | `/session/recent` | Most recently accessed memories for session continuity |
+| `GET` | `/vault/entities` | List all entities in a vault's entity graph |
+| `GET` | `/vault/entities/{name}` | Details for a specific entity |
+| `GET` | `/vault/entities/{name}/timeline` | Temporal history of an entity |
+| `GET` | `/vault/entities/{name}/cases` | All cases linked to an entity |
+| `PUT` | `/cases/{id}` | Evolve (update) a case, archiving the previous version |
+| `POST` | `/cases/consolidate` | Merge multiple cases into one |
+| `PATCH` | `/cases/{id}/state` | Change a case's lifecycle state |
 | `POST` | `/ingest/csv` | Ingest CSV from server file path |
 | `POST` | `/ingest/pdf` | Ingest PDF from server file path |
 | `POST` | `/ingest/csv/upload` | Ingest CSV via multipart upload |
@@ -466,7 +474,7 @@ curl -X POST http://localhost:8000/feedback \
   }'
 ```
 
-This re-activates the returned cases (boosting their temporal priority) and links them with `supports` relations so they strengthen each other in future queries.
+This sends per-case relevance signals to MuninnDB via `muninn_feedback` and links relevant cases with `supports` relations via `muninn_link`, so they strengthen each other in future queries.
 
 ### Example: Vault Stats
 
@@ -521,14 +529,13 @@ Both support `--depth=deep` for more thorough analysis.
 dalil/
   api/                  # FastAPI endpoints and request/response models
   cli.py                # Click CLI for vault management and service control
-  services/             # ConsultService orchestrator, ingestion, prompt builder
+  services/             # ConsultService orchestrator, ingestion, prompt builder, response formatter
   memory/               # MemoryBackend interface, MuninnDB adapter, case schema
-  ingestion/            # Loaders (CSV, PDF, Confluence), normalizer, chunker, enricher
-  tools/                # Tool selector (extensible for future data tools)
+  ingestion/            # Loaders (CSV, PDF, Confluence), normalizer, chunker
   llm/                  # LLM interface, API/local implementations, factory
   analytics/            # Structured logging, metrics, event definitions
   config/               # Settings loader with provider mappings
-  tests/                # 21 unit tests
+  tests/                # Unit tests (schema, ingestion, prompt builder, response formatter)
   scripts/              # MuninnDB bootstrap script
 .dalil/                 # Per-vault API keys (auto-generated, gitignored)
 config.json             # Main configuration file
@@ -540,8 +547,6 @@ docker-compose.yml      # Production + dev containers
 
 ## Current Limitations
 
-- **Tool selector** — keyword/regex routing, no semantic intent understanding
-- **Enricher** — heuristic-based entity extraction and tagging
 - **Confluence** — requires working Atlassian credentials
 - **No auth** — no authentication middleware on the API
 - **No rate limiting** — on API or MuninnDB calls
@@ -552,16 +557,20 @@ docker-compose.yml      # Production + dev containers
 
 ## Roadmap
 
-- [x] MCP ingestion with enrichment pipeline (entity extraction, graph edges)
+- [x] MCP ingestion — enrichment delegated to MuninnDB (entity extraction, graph edges)
 - [x] Spreading activation via `max_hops` on retrieval
-- [x] Feedback loop (re-activation, case linking, archival)
-- [x] Vault health stats with contradiction detection
+- [x] Feedback loop via `muninn_feedback` + `muninn_link`
+- [x] Vault health stats (`muninn_status`, `muninn_contradictions`)
 - [x] CLI for vault management with per-vault API key auth
 - [x] Retrieval-only mode (LLM optional)
 - [x] Full case content in consult response
 - [x] Dynamic LLM and embedding provider support
+- [x] Entity graph endpoints (list, detail, timeline, cases)
+- [x] Case lifecycle endpoints (evolve, consolidate, state)
+- [x] Graph traversal endpoint
+- [x] Session continuity (`/session/recent`)
+- [x] `muninn_guide` called on startup
 - [ ] Grounding validation step ([#6](https://github.com/KhaledAwashreh/Dalil/issues/6))
-- [ ] LLM-based entity extraction and summarization
 - [ ] API authentication and authorization
 - [ ] WebSocket endpoint for streaming responses
 - [ ] Prometheus metrics exporter

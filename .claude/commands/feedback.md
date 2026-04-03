@@ -2,29 +2,31 @@
 name: dalil-feedback
 description: Send feedback on a Dalil consultation to improve future results
 mode: agent
-argument-hint: "<request_id> <useful|not_useful> [--comment=reason]"
+argument-hint: "<request_id> [--results=[{case_id, relevant},...]] [--comment=reason]"
 allowed-tools:
   - Bash
 ---
 
 # Dalil Feedback
 
-Send feedback on a previous consultation. This improves Dalil's knowledge over time:
+Send per-case relevance feedback on a previous consultation. This improves Dalil's knowledge over time:
 
-- **useful** — re-activates returned cases (boosts temporal priority) and links them with "supports" relations
-- **not_useful** — archives the returned cases with a reason
+- Uses **muninn_feedback** (SGD weight tuning) under the hood to adjust case scoring
+- Cases marked relevant that co-occur get automatic "supports" links via muninn_link
+- Cases marked not relevant are **not archived** — MuninnDB adjusts their scoring naturally
 
 ## Variables
 
 - `REQUEST_ID`: first positional argument (required)
-- `SIGNAL`: second positional argument, `useful` or `not_useful` (required)
+- `RESULTS`: value of `--results` flag — JSON array of `[{case_id, relevant}]` per-case signals (required)
 - `COMMENT`: value of `--comment` flag, default empty
 - `DALIL_URL`: env var `DALIL_URL`, default `http://localhost:8000`
 
 ## Rules
 
-- DO validate that signal is either `useful` or `not_useful`
-- DO include a comment when marking `not_useful` — it helps explain why
+- DO provide per-case relevance signals in the `results` array
+- DO include a comment when marking cases as not relevant — it helps explain why
+- Marking a case not relevant does NOT archive it — MuninnDB handles scoring adjustment
 
 ---
 
@@ -32,10 +34,10 @@ Send feedback on a previous consultation. This improves Dalil's knowledge over t
 
 ### Step 1 — Validate
 
-If `REQUEST_ID` or `SIGNAL` is missing, print usage and stop:
+If `REQUEST_ID` or `RESULTS` is missing, print usage and stop:
 
 ```
-Usage: /dalil-feedback <request_id> <useful|not_useful> [--comment="reason"]
+Usage: /dalil-feedback <request_id> --results='[{"case_id":"...", "relevant": true}, ...]' [--comment="reason"]
 ```
 
 ### Step 2 — Send Feedback
@@ -46,7 +48,7 @@ curl -sf -X POST "${dalil_url}/feedback" \
   -H "Content-Type: application/json" \
   -d "{
     \"request_id\": \"${REQUEST_ID}\",
-    \"signal\": \"${SIGNAL}\",
+    \"results\": ${RESULTS},
     \"comment\": \"${COMMENT}\"
   }"
 ```
@@ -57,7 +59,7 @@ curl -sf -X POST "${dalil_url}/feedback" \
 ## Feedback Recorded
 
 **Request ID:** {request_id}
-**Signal:** {signal}
-**Cases Affected:** {cases_affected}
-**Actions:** {actions_taken}
+**Cases Updated:** {list of case_ids and their relevance signals}
+**Weight Adjustments:** {SGD tuning applied}
+**Links Created:** {any "supports" links created between co-relevant cases}
 ```

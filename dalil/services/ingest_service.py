@@ -178,4 +178,3 @@ class IngestService:
             "cases_created": len(ids),
             "vault": vault,
         }
-

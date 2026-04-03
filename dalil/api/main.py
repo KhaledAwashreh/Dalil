@@ -4,6 +4,7 @@ Dalil — FastAPI application entry point.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -13,8 +14,16 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from dalil.api.models import (
+    ConsolidateCasesRequest,
+    ConsolidateCasesResponse,
     ConsultRequest,
     ConsultResponse,
+    EntityCasesResponse,
+    EntityDetailResponse,
+    EntityListResponse,
+    EntityTimelineResponse,
+    EvolveCaseRequest,
+    EvolveCaseResponse,
     FeedbackRequest,
     FeedbackResponse,
     HealthResponse,
@@ -22,6 +31,11 @@ from dalil.api.models import (
     IngestCSVRequest,
     IngestPDFRequest,
     IngestResponse,
+    RecentMemoriesResponse,
+    SetCaseStateRequest,
+    SetCaseStateResponse,
+    TraverseRequest,
+    TraverseResponse,
     VaultStatsResponse,
 )
 from dalil.config.settings import Settings, load_settings, resolve_muninn_embed_env
@@ -83,6 +97,23 @@ async def lifespan(app: FastAPI):
             logger.warning("LLM init failed — running in retrieval-only mode: %s", e)
     else:
         logger.info("No LLM configured — running in retrieval-only mode")
+
+    # Fetch vault guide (best-effort, non-blocking)
+    guide = None
+    try:
+        guide = await asyncio.wait_for(
+            memory.get_guide(settings.muninn.default_vault),
+            timeout=5.0,
+        )
+        if guide:
+            logger.info("MuninnDB vault guide for '%s': %s", settings.muninn.default_vault, guide)
+        else:
+            logger.info("No guide returned for vault '%s'", settings.muninn.default_vault)
+    except asyncio.TimeoutError:
+        logger.warning("muninn_guide timed out — continuing startup")
+    except Exception as e:
+        logger.warning("muninn_guide failed — continuing startup: %s", e)
+    app.state.vault_guide = guide
 
     # Initialize services
     consult_service = ConsultService(
@@ -242,91 +273,242 @@ async def ingest_confluence(req: IngestConfluenceRequest):
 
 @app.post("/feedback", response_model=FeedbackResponse)
 async def feedback(req: FeedbackRequest):
-    """Provide feedback on a consultation to improve future results."""
-    if req.signal not in ("useful", "not_useful"):
-        raise HTTPException(status_code=400, detail="signal must be 'useful' or 'not_useful'")
+    """Provide feedback on a consultation to improve future results.
 
-    # Look up case IDs from the consultation
+    Accepts two formats:
+    - New: ``results`` list with per-case ``{case_id, relevant}`` signals.
+    - Legacy: ``signal`` ('useful'/'not_useful') + optional ``case_ids``.
+    """
+    # Look up cached consultation data (case_ids, vault, query)
     cached = consult_service.get_request_cases(req.request_id)
-    if not cached and not req.case_ids:
+
+    # Build the per-case relevance list — new format takes priority
+    if req.results:
+        results = [{"id": r.case_id, "relevant": r.relevant} for r in req.results]
+    elif req.signal:
+        # Legacy format: convert bulk signal to per-case relevance
+        if req.signal not in ("useful", "not_useful"):
+            raise HTTPException(status_code=400, detail="signal must be 'useful' or 'not_useful'")
+        case_ids = req.case_ids or (cached[0] if cached else [])
+        if not case_ids:
+            raise HTTPException(
+                status_code=404,
+                detail="request_id not found in cache and no case_ids provided",
+            )
+        is_relevant = req.signal == "useful"
+        results = [{"id": cid, "relevant": is_relevant} for cid in case_ids]
+    else:
         raise HTTPException(
-            status_code=404,
-            detail="request_id not found in cache and no case_ids provided",
+            status_code=400,
+            detail="Provide either 'results' (preferred) or 'signal' field",
         )
 
-    case_ids = req.case_ids or (cached[0] if cached else [])
     vault = cached[1] if cached else "default"
-    actions: list[str] = []
+    query = cached[2] if cached else ""
 
-    from dalil.memory.muninn_adapter import MuninnBackend
+    if not query:
+        raise HTTPException(
+            status_code=404,
+            detail="Original query not found in cache — request_id may have expired",
+        )
 
-    if not isinstance(memory, MuninnBackend):
-        raise HTTPException(status_code=501, detail="Feedback requires MuninnDB backend")
-
-    if req.signal == "useful":
-        # Re-activate cases to boost temporal priority
-        await memory.re_activate(query="", vault=vault, case_ids=case_ids)
-        actions.append(f"re-activated {len(case_ids)} cases")
-
-        # Link co-useful cases together
-        if len(case_ids) > 1:
-            for i in range(len(case_ids) - 1):
-                try:
-                    await memory.link_cases(
-                        source_id=case_ids[i],
-                        target_id=case_ids[i + 1],
-                        relation="supports",
-                        vault=vault,
-                    )
-                except Exception as e:
-                    logger.warning("Failed to link %s -> %s: %s", case_ids[i], case_ids[i + 1], e)
-            actions.append(f"linked {len(case_ids)} cases with 'supports' relation")
-
-    elif req.signal == "not_useful":
-        for cid in case_ids:
-            try:
-                await memory.archive_case(
-                    case_id=cid, vault=vault, reason=req.comment or "Not useful",
-                )
-            except Exception as e:
-                logger.warning("Failed to archive %s: %s", cid, e)
-        actions.append(f"archived {len(case_ids)} cases")
+    # Delegate to the memory backend
+    actions = await memory.handle_feedback(
+        vault=vault,
+        query=query,
+        results=results,
+        comment=req.comment or None,
+    )
 
     return FeedbackResponse(
         request_id=req.request_id,
-        signal=req.signal,
-        cases_affected=len(case_ids),
+        cases_affected=len(results),
         actions_taken=actions,
     )
+
+
+# --- Case lifecycle (evolve, consolidate, state) ---
+
+
+@app.put("/cases/{case_id}", response_model=EvolveCaseResponse)
+async def evolve_case(case_id: str, req: EvolveCaseRequest):
+    """Update a case in place, archiving the previous version."""
+    try:
+        result = await memory.evolve_case(
+            vault=req.vault,
+            case_id=case_id,
+            content=req.content,
+            concept=req.concept,
+        )
+        if result is None:
+            raise HTTPException(status_code=500, detail="Failed to evolve case")
+        return EvolveCaseResponse(case_id=case_id, vault=req.vault, result=result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("evolve_case failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cases/consolidate", response_model=ConsolidateCasesResponse)
+async def consolidate_cases(req: ConsolidateCasesRequest):
+    """Merge multiple cases into one."""
+    if len(req.case_ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 case_ids required")
+    try:
+        result = await memory.consolidate_cases(
+            vault=req.vault,
+            case_ids=req.case_ids,
+            concept=req.concept,
+        )
+        if result is None:
+            raise HTTPException(status_code=500, detail="Failed to consolidate cases")
+        merged_id = result.get("id", result.get("merged_id", ""))
+        return ConsolidateCasesResponse(
+            vault=req.vault, merged_id=merged_id, result=result,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("consolidate_cases failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/cases/{case_id}/state", response_model=SetCaseStateResponse)
+async def set_case_state(case_id: str, req: SetCaseStateRequest):
+    """Change the lifecycle state of a case."""
+    try:
+        success = await memory.set_case_state(
+            vault=req.vault,
+            case_id=case_id,
+            state=req.state,
+        )
+        return SetCaseStateResponse(case_id=case_id, state=req.state, success=success)
+    except Exception as e:
+        logger.exception("set_case_state failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/vault/stats", response_model=VaultStatsResponse)
 async def vault_stats(vault: str = "default"):
     """Get knowledge health metrics for a vault."""
-    from dalil.memory.muninn_adapter import MuninnBackend
-
-    if not isinstance(memory, MuninnBackend):
-        raise HTTPException(status_code=501, detail="Vault stats requires MuninnDB backend")
-
     try:
-        stats = await memory.get_stats(vault=vault)
-        contradiction_count = 0
+        # Fetch stats and contradictions in parallel (independent calls)
+        stats_task = asyncio.create_task(memory.get_vault_stats(vault=vault))
+        contradictions_task = asyncio.create_task(
+            memory.get_contradictions(vault=vault)
+        )
+
+        stats: dict = {}
+        contradictions: list[dict] = []
+
         try:
-            contradictions = await memory.get_contradictions(vault=vault)
-            contradiction_count = len(contradictions)
-        except Exception:
-            pass
+            stats = await stats_task
+        except Exception as e:
+            logger.warning("muninn_status unavailable: %s", e)
+
+        try:
+            contradictions = await contradictions_task
+        except Exception as e:
+            logger.warning("muninn_contradictions unavailable: %s", e)
 
         return VaultStatsResponse(
             vault=vault,
-            engram_count=stats.get("engram_count", stats.get("count", 0)),
+            engram_count=stats.get("engram_count", 0),
             storage_bytes=stats.get("storage_bytes", 0),
+            coherence_score=stats.get("coherence_score", 0.0),
+            orphan_ratio=stats.get("orphan_ratio", 0.0),
+            duplication_pressure=stats.get("duplication_pressure", 0.0),
+            contradiction_count=stats.get("contradiction_count", len(contradictions)),
+            contradictions=contradictions,
             confidence_distribution=stats.get("confidence_distribution", {}),
-            coherence_scores=stats.get("coherence_scores", {}),
-            contradiction_count=contradiction_count,
         )
     except Exception as e:
         logger.exception("Failed to get vault stats")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Graph Traversal ---
+
+
+@app.post("/traverse", response_model=TraverseResponse)
+async def traverse(req: TraverseRequest):
+    """BFS graph traversal from a starting engram."""
+    try:
+        result = await memory.traverse(
+            vault=req.vault,
+            start_id=req.start_id,
+            max_depth=req.max_depth,
+            relation_filter=req.relation_filter,
+        )
+        return TraverseResponse(start_id=req.start_id, vault=req.vault, result=result)
+    except Exception as e:
+        logger.exception("Traverse failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Session Continuity ---
+
+
+@app.get("/session/recent", response_model=RecentMemoriesResponse)
+async def session_recent(vault: str = "default", limit: int = 5):
+    """Return most recently accessed memories for session continuity."""
+    try:
+        memories = await memory.where_left_off(vault=vault, limit=limit)
+        return RecentMemoriesResponse(vault=vault, memories=memories)
+    except Exception as e:
+        logger.exception("where_left_off failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Entity Graph ---
+
+
+@app.get("/vault/entities", response_model=EntityListResponse)
+async def list_entities(vault: str = "default"):
+    """List all entities in a vault's entity graph."""
+    try:
+        entities = await memory.list_entities(vault=vault)
+        return EntityListResponse(vault=vault, entities=entities)
+    except Exception as e:
+        logger.exception("list_entities failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/vault/entities/{entity_name}", response_model=EntityDetailResponse)
+async def get_entity(entity_name: str, vault: str = "default"):
+    """Get details for a specific entity."""
+    try:
+        detail = await memory.get_entity(vault=vault, entity_name=entity_name)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' not found")
+        return EntityDetailResponse(vault=vault, entity_name=entity_name, detail=detail)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("get_entity failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/vault/entities/{entity_name}/timeline", response_model=EntityTimelineResponse)
+async def get_entity_timeline(entity_name: str, vault: str = "default"):
+    """Get temporal history of an entity."""
+    try:
+        timeline = await memory.get_entity_timeline(vault=vault, entity_name=entity_name)
+        return EntityTimelineResponse(vault=vault, entity_name=entity_name, timeline=timeline)
+    except Exception as e:
+        logger.exception("get_entity_timeline failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/vault/entities/{entity_name}/cases", response_model=EntityCasesResponse)
+async def get_entity_cases(entity_name: str, vault: str = "default"):
+    """Find all cases/engrams linked to an entity."""
+    try:
+        cases = await memory.find_by_entity(vault=vault, entity_name=entity_name)
+        return EntityCasesResponse(vault=vault, entity_name=entity_name, cases=cases)
+    except Exception as e:
+        logger.exception("find_by_entity failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -339,4 +521,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -136,6 +136,7 @@ Edit `config.json`:
 {
   "muninn": {
     "base_url": "http://localhost:8476",
+    "mcp_url": "http://localhost:8750/mcp",
     "token": "",
     "default_vault": "default",
     "timeout": 10.0
@@ -157,8 +158,9 @@ Edit `config.json`:
     "confluence_email": ""
   },
   "embeddings": {
-    "enabled": false,
-    "model_name": "all-MiniLM-L6-v2"
+    "provider": "",
+    "api_key": "",
+    "model_name": ""
   },
   "log_level": "INFO",
   "api_host": "0.0.0.0",
@@ -184,7 +186,9 @@ Edit `config.json`:
 | `ingestion.chunk_size` | int | `1000` | Max characters per chunk for PDF/Confluence |
 | `ingestion.chunk_overlap` | int | `200` | Overlap between chunks |
 | `ingestion.confluence_*` | string | `""` | Confluence connection (base URL, API token, email) |
-| `embeddings.enabled` | bool | `false` | Enable optional local SentenceTransformers (MuninnDB handles embeddings by default) |
+| `embeddings.provider` | string | `""` | Embedding provider for MuninnDB (`openai`, `jina`, `cohere`, `google`, `mistral`, `voyage`, or empty for local) |
+| `embeddings.api_key` | string | `""` | API key for the embedding provider |
+| `embeddings.model_name` | string | `""` | Optional model override (MuninnDB uses provider default if empty) |
 | `log_level` | string | `"INFO"` | Python log level |
 
 ### Environment variable overrides
@@ -195,10 +199,13 @@ These take priority over the config file:
 |----------|-----------|
 | `DALIL_CONFIG` | Path to config JSON file |
 | `MUNINN_URL` | `muninn.base_url` |
+| `MUNINN_MCP_URL` | `muninn.mcp_url` |
 | `MUNINN_TOKEN` | `muninn.token` |
 | `LLM_API_KEY` | `llm.api_key` |
 | `LLM_BASE_URL` | `llm.base_url` |
 | `LLM_MODEL` | `llm.model` |
+| `EMBED_PROVIDER` | `embeddings.provider` |
+| `EMBED_API_KEY` | `embeddings.api_key` |
 
 ## Step 6: Run the server
 
@@ -364,7 +371,7 @@ Response:
 pytest dalil/tests/ -v
 ```
 
-All 21 tests pass without any external services running (tests cover schema, ingestion, prompt building, and tool selection — not MuninnDB or LLM integration).
+All 27 tests pass without any external services running (tests cover schema, ingestion, prompt building, and response formatting — not MuninnDB or LLM integration).
 
 ## Vault Isolation
 

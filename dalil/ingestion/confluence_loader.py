@@ -18,7 +18,6 @@ from typing import Any
 import httpx
 
 from dalil.ingestion.chunker import chunk_text
-from dalil.ingestion.enricher import enrich
 from dalil.ingestion.normalizer import normalize_tags, normalize_text
 from dalil.memory.cases_schema import ConsultingCase, SourceType
 
@@ -158,17 +157,13 @@ class ConfluenceLoader:
         cases: list[ConsultingCase] = []
         chunks = chunk_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         for i, chunk in enumerate(chunks):
-            enrichment = enrich(chunk, existing_tags=labels + (default_tags or []))
             chunk_title = (
                 f"{title} (Part {i + 1}/{len(chunks)})" if len(chunks) > 1 else title
             )
             case = ConsultingCase(
-                type=enrichment["case_type"],
                 title=chunk_title,
                 content=chunk,
-                tags=normalize_tags(enrichment["tags"]),
-                entities=enrichment["entities"],
-                industry=enrichment["industry"],
+                tags=normalize_tags(labels + (default_tags or [])),
                 source="confluence",
                 source_type=SourceType.CONFLUENCE,
                 source_uri=source_uri,

@@ -8,7 +8,6 @@ Retrieval uses the REST API (port 8475) for the 6-phase ACTIVATE pipeline.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from pathlib import Path
@@ -197,12 +196,24 @@ class MuninnBackend(MemoryBackend):
             batch = cases[batch_start : batch_start + _MCP_BATCH_SIZE]
             memories = []
             for case in batch:
-                memories.append({
+                memory: dict[str, Any] = {
                     "concept": case.title[:512],
                     "content": case.to_engram_content(),
                     "tags": case.tags,
                     "confidence": case.confidence,
-                })
+                }
+                if case.summary:
+                    memory["summary"] = case.summary
+                if case.entities:
+                    memory["entities"] = [
+                        {"name": e.name, "type": e.type} for e in case.entities
+                    ]
+                if case.relationships:
+                    memory["relationships"] = [
+                        {"target_id": r.target_id, "relation": r.relation, "weight": r.weight}
+                        for r in case.relationships
+                    ]
+                memories.append(memory)
             result = await self._mcp_call("muninn_remember_batch", {
                 "vault": v,
                 "memories": memories,
@@ -336,10 +347,59 @@ class MuninnBackend(MemoryBackend):
         })
         logger.info("Archived case %s in vault '%s'", case_id, v)
 
+    async def handle_feedback(
+        self,
+        vault: str,
+        query: str,
+        results: list[dict],
+        comment: str | None = None,
+    ) -> list[str]:
+        """Send relevance feedback to MuninnDB and link co-relevant cases."""
+        v = vault or self.default_vault
+        actions: list[str] = []
+
+        # 1. Call muninn_feedback for SGD weight tuning
+        feedback_args: dict = {
+            "vault": v,
+            "query": query,
+            "results": [{"id": r["id"], "relevant": r["relevant"]} for r in results],
+        }
+        if comment:
+            feedback_args["comment"] = comment
+        try:
+            await self._mcp_call("muninn_feedback", feedback_args)
+            actions.append(f"sent relevance feedback for {len(results)} cases")
+        except Exception as e:
+            logger.warning("muninn_feedback failed: %s", e)
+            actions.append(f"muninn_feedback failed: {e}")
+
+        # 2. Link co-relevant cases with "supports" relation
+        relevant_ids = [r["id"] for r in results if r.get("relevant")]
+        if len(relevant_ids) > 1:
+            linked = 0
+            for i in range(len(relevant_ids) - 1):
+                try:
+                    await self.link_cases(
+                        source_id=relevant_ids[i],
+                        target_id=relevant_ids[i + 1],
+                        relation="supports",
+                        vault=v,
+                    )
+                    linked += 1
+                except Exception as e:
+                    logger.warning(
+                        "Failed to link %s -> %s: %s",
+                        relevant_ids[i], relevant_ids[i + 1], e,
+                    )
+            if linked:
+                actions.append(f"linked {linked} pairs of co-relevant cases")
+
+        return actions
+
     async def re_activate(
         self, query: str, vault: str = "default", case_ids: list[str] | None = None
     ) -> None:
-        """Re-activate cases to boost their temporal priority."""
+        """Re-activate cases to boost their temporal priority (legacy)."""
         v = vault or self.default_vault
         if case_ids:
             for cid in case_ids:
@@ -348,23 +408,208 @@ class MuninnBackend(MemoryBackend):
                 except Exception as e:
                     logger.warning("Failed to re-activate %s: %s", cid, e)
 
-    # ── Stats (REST + MCP) ──────────────────────────────────────────
+    # ── Score explanation (MCP) ────────────────────────────────────
 
-    async def get_stats(self, vault: str = "default") -> dict[str, Any]:
-        """Get vault statistics from MuninnDB."""
+    async def explain_score(self, vault: str, engram_id: str) -> dict | None:
+        """Return MuninnDB score breakdown for an engram via muninn_explain."""
         v = vault or self.default_vault
-        http = await self._get_http(v)
-        resp = await http.get("/api/stats", params={"vault": v})
-        resp.raise_for_status()
-        return resp.json()
+        try:
+            result = await self._mcp_call("muninn_explain", {
+                "vault": v,
+                "id": engram_id,
+            })
+            if isinstance(result, dict):
+                return result
+            # Handle text-block MCP responses
+            if isinstance(result, list):
+                for item in result:
+                    if isinstance(item, dict) and "text" in item:
+                        try:
+                            return json.loads(item["text"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+            return None
+        except Exception as e:
+            logger.warning("muninn_explain failed for %s: %s", engram_id, e)
+            return None
 
-    async def get_contradictions(self, vault: str = "default") -> list[dict[str, Any]]:
-        """Get engrams linked with 'contradicts' relation."""
+    # ── Stats (MCP) ──────────────────────────────────────────────────
+
+    async def get_vault_stats(self, vault: str = "default") -> dict[str, Any]:
+        """Get vault health metrics via muninn_status MCP tool."""
         v = vault or self.default_vault
-        result = await self._mcp_call("muninn_contradictions", {"vault": v})
+        result = await self._mcp_call("muninn_status", {"vault": v})
+        if isinstance(result, dict):
+            return result
+        # Handle text-block responses from MCP
+        if isinstance(result, list):
+            for item in result:
+                if isinstance(item, dict) and "text" in item:
+                    try:
+                        return json.loads(item["text"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+        return {}
+
+    async def get_contradictions(
+        self, vault: str = "default", limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Get contradiction pairs via muninn_contradictions MCP tool."""
+        v = vault or self.default_vault
+        result = await self._mcp_call(
+            "muninn_contradictions", {"vault": v, "limit": limit},
+        )
         if isinstance(result, list):
             return result
+        # Handle text-block responses from MCP
+        if isinstance(result, dict) and "content" in result:
+            content = result["content"]
+            if isinstance(content, list):
+                return content
         return []
+
+    # ── Graph traversal & session continuity (MCP) ──────────────
+
+    async def traverse(
+        self,
+        vault: str,
+        start_id: str,
+        max_depth: int = 3,
+        relation_filter: list[str] | None = None,
+    ) -> dict:
+        v = vault or self.default_vault
+        args: dict[str, Any] = {
+            "vault": v,
+            "start_id": start_id,
+            "max_depth": max_depth,
+        }
+        if relation_filter:
+            args["relation_filter"] = relation_filter
+        try:
+            result = await self._mcp_call("muninn_traverse", args)
+            return result if isinstance(result, dict) else {"raw": result}
+        except Exception as e:
+            logger.warning("muninn_traverse failed: %s", e)
+            return {}
+
+    async def where_left_off(self, vault: str, limit: int = 5) -> list[dict]:
+        v = vault or self.default_vault
+        try:
+            result = await self._mcp_call("muninn_where_left_off", {
+                "vault": v,
+                "limit": limit,
+            })
+            return result if isinstance(result, list) else []
+        except Exception as e:
+            logger.warning("muninn_where_left_off failed: %s", e)
+            return []
+
+    # ── Entity graph (MCP) ─────────────────────────────────────
+
+    async def list_entities(self, vault: str) -> list[dict]:
+        v = vault or self.default_vault
+        try:
+            result = await self._mcp_call("muninn_entities", {"vault": v})
+            return result if isinstance(result, list) else []
+        except Exception as e:
+            logger.warning("muninn_entities failed: %s", e)
+            return []
+
+    async def get_entity(self, vault: str, entity_name: str) -> dict | None:
+        v = vault or self.default_vault
+        try:
+            result = await self._mcp_call("muninn_entity", {
+                "vault": v,
+                "entity_name": entity_name,
+            })
+            return result if isinstance(result, dict) else {"raw": result}
+        except Exception as e:
+            logger.warning("muninn_entity failed for '%s': %s", entity_name, e)
+            return None
+
+    async def get_entity_timeline(self, vault: str, entity_name: str) -> list[dict]:
+        v = vault or self.default_vault
+        try:
+            result = await self._mcp_call("muninn_entity_timeline", {
+                "vault": v,
+                "entity_name": entity_name,
+            })
+            return result if isinstance(result, list) else []
+        except Exception as e:
+            logger.warning("muninn_entity_timeline failed for '%s': %s", entity_name, e)
+            return []
+
+    async def find_by_entity(self, vault: str, entity_name: str) -> list[dict]:
+        v = vault or self.default_vault
+        try:
+            result = await self._mcp_call("muninn_find_by_entity", {
+                "vault": v,
+                "entity_name": entity_name,
+            })
+            return result if isinstance(result, list) else []
+        except Exception as e:
+            logger.warning("muninn_find_by_entity failed for '%s': %s", entity_name, e)
+            return []
+
+    # ── Guide ─────────────────────────────────────────────────────
+
+    async def get_guide(self, vault: str = "default") -> dict | None:
+        """Call muninn_guide to get vault-aware best practices."""
+        v = vault or self.default_vault
+        try:
+            result = await self._mcp_call("muninn_guide", {"vault": v})
+            return result if isinstance(result, dict) else {"raw": result}
+        except Exception as e:
+            logger.warning("muninn_guide call failed for vault '%s': %s", v, e)
+            return None
+
+    # ── Evolve, consolidate & state lifecycle (MCP) ─────────────
+
+    async def evolve_case(
+        self, vault: str, case_id: str, content: str, concept: str | None = None
+    ) -> dict | None:
+        v = vault or self.default_vault
+        args: dict[str, Any] = {"vault": v, "id": case_id, "content": content}
+        if concept is not None:
+            args["concept"] = concept
+        try:
+            result = await self._mcp_call("muninn_evolve", args)
+            logger.info("Evolved case %s in vault '%s'", case_id, v)
+            return result if isinstance(result, dict) else {"raw": result}
+        except Exception as e:
+            logger.warning("muninn_evolve failed for %s: %s", case_id, e)
+            return None
+
+    async def consolidate_cases(
+        self, vault: str, case_ids: list[str], concept: str | None = None
+    ) -> dict | None:
+        v = vault or self.default_vault
+        args: dict[str, Any] = {"vault": v, "ids": case_ids}
+        if concept is not None:
+            args["concept"] = concept
+        try:
+            result = await self._mcp_call("muninn_consolidate", args)
+            logger.info("Consolidated %d cases in vault '%s'", len(case_ids), v)
+            return result if isinstance(result, dict) else {"raw": result}
+        except Exception as e:
+            logger.warning("muninn_consolidate failed: %s", e)
+            return None
+
+    async def set_case_state(
+        self, vault: str, case_id: str, state: str
+    ) -> bool:
+        v = vault or self.default_vault
+        try:
+            await self._mcp_call("muninn_state", {
+                "vault": v,
+                "id": case_id,
+                "state": state,
+            })
+            logger.info("Set state of %s to '%s' in vault '%s'", case_id, state, v)
+            return True
+        except Exception as e:
+            logger.warning("muninn_state failed for %s: %s", case_id, e)
+            return False
 
     # ── Lifecycle ───────────────────────────────────────────────────
 
