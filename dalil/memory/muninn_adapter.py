@@ -9,7 +9,9 @@ Retrieval uses the REST API (port 8475) for the 6-phase ACTIVATE pipeline.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,6 +22,61 @@ from dalil.memory.cases_schema import ConsultingCase
 logger = logging.getLogger(__name__)
 
 _MCP_BATCH_SIZE = 50  # MuninnDB limit for muninn_remember_batch
+
+
+def _extract_ids(result: Any) -> list[str]:
+    """Extract engram IDs from a muninn_remember_batch MCP response.
+
+    MuninnDB may return:
+      - a list of dicts with "id" keys
+      - a list of content blocks with "text" containing IDs
+      - a dict with "ids" or "content" keys
+      - a single string with newline-separated IDs
+    """
+    ids: list[str] = []
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                if "id" in item:
+                    ids.append(item["id"])
+                elif "text" in item:
+                    # Text block may contain multiple IDs (newline or comma separated)
+                    text = item["text"]
+                    for line in text.replace(",", "\n").splitlines():
+                        line = line.strip()
+                        if line and not line.startswith(("Stored", "OK", "{")):
+                            ids.append(line)
+            elif isinstance(item, str) and item.strip():
+                ids.append(item.strip())
+    elif isinstance(result, dict):
+        if "ids" in result:
+            ids.extend(result["ids"])
+        elif "content" in result and isinstance(result["content"], list):
+            ids.extend(_extract_ids(result["content"]))
+        elif "id" in result:
+            ids.append(result["id"])
+    elif isinstance(result, str):
+        for line in result.splitlines():
+            line = line.strip()
+            if line:
+                ids.append(line)
+    return ids
+_VAULTS_PATHS = [
+    Path(".dalil") / "vaults.json",       # local dev (CWD)
+    Path("/app/.dalil") / "vaults.json",  # Docker container mount
+]
+
+
+def _load_vault_keys() -> dict[str, str]:
+    """Load vault name -> token mapping from .dalil/vaults.json."""
+    for path in _VAULTS_PATHS:
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+                return {name: info["token"] for name, info in data.items() if "token" in info}
+            except (json.JSONDecodeError, KeyError):
+                continue
+    return {}
 
 
 class MuninnBackend(MemoryBackend):
@@ -41,21 +98,43 @@ class MuninnBackend(MemoryBackend):
         self.timeout = timeout
         self._http: httpx.AsyncClient | None = None
         self._mcp_id = 0
+        self._vault_keys = _load_vault_keys()
 
-    def _headers(self) -> dict[str, str]:
+    def _token_for_vault(self, vault: str | None = None) -> str | None:
+        """Resolve the API key for a vault: vault-specific key > global token > None."""
+        v = vault or self.default_vault
+        return self._vault_keys.get(v) or self.token or None
+
+    def _headers(self, vault: str | None = None) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
-        if self.token and self.token.strip():
-            headers["Authorization"] = f"Bearer {self.token}"
+        token = self._token_for_vault(vault)
+        if token and token.strip():
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    async def _get_http(self) -> httpx.AsyncClient:
-        if self._http is None or self._http.is_closed:
-            self._http = httpx.AsyncClient(
-                base_url=self.rest_url,
-                headers=self._headers(),
-                timeout=self.timeout,
-            )
-        return self._http
+    async def _get_http(self, vault: str | None = None) -> httpx.AsyncClient:
+        """Get an HTTP client with the right auth for the given vault.
+
+        For vaults using the default token, reuses a persistent client.
+        For vaults with their own key, creates a fresh client (caller should
+        close it via ``async with`` or ``await client.aclose()`` when done,
+        but non-closure is tolerable — httpx cleans up on GC).
+        """
+        token = self._token_for_vault(vault)
+        default_token = self._token_for_vault(self.default_vault)
+        if token == default_token:
+            if self._http is None or self._http.is_closed:
+                self._http = httpx.AsyncClient(
+                    base_url=self.rest_url,
+                    headers=self._headers(vault),
+                    timeout=self.timeout,
+                )
+            return self._http
+        return httpx.AsyncClient(
+            base_url=self.rest_url,
+            headers=self._headers(vault),
+            timeout=self.timeout,
+        )
 
     # ── MCP helper ──────────────────────────────────────────────────
 
@@ -71,11 +150,12 @@ class MuninnBackend(MemoryBackend):
             },
             "id": self._mcp_id,
         }
+        vault = arguments.get("vault")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
                 self.mcp_url,
                 json=payload,
-                headers=self._headers(),
+                headers=self._headers(vault),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -127,18 +207,14 @@ class MuninnBackend(MemoryBackend):
                 "vault": v,
                 "memories": memories,
             })
-            # Extract IDs from batch result
-            if isinstance(result, list):
-                for item in result:
-                    if isinstance(item, dict):
-                        ids.append(item.get("id", item.get("text", str(item))))
-                    else:
-                        ids.append(str(item))
-            elif isinstance(result, dict):
-                batch_ids = result.get("ids", [])
-                ids.extend(batch_ids if batch_ids else [str(result)])
+            logger.debug("muninn_remember_batch raw result: %s", result)
+            # Extract IDs from batch result — MCP returns varied formats
+            batch_ids = _extract_ids(result)
+            if batch_ids:
+                ids.extend(batch_ids)
             else:
-                ids.append(str(result))
+                # Fallback: assume all memories were stored
+                ids.extend([f"batch-{batch_start + i}" for i in range(len(batch))])
 
             if batch_start > 0 and batch_start % 100 == 0:
                 logger.info("Ingested %d/%d cases into vault '%s'", batch_start, len(cases), v)
@@ -158,7 +234,7 @@ class MuninnBackend(MemoryBackend):
         max_hops: int = 2,
     ) -> RetrievalResult:
         v = vault or self.default_vault
-        http = await self._get_http()
+        http = await self._get_http(v)
 
         payload: dict[str, Any] = {
             "vault": v,
@@ -167,12 +243,18 @@ class MuninnBackend(MemoryBackend):
             "threshold": threshold,
             "max_hops": max_hops,
         }
+        if tags:
+            payload["tags"] = tags
 
         resp = await http.post("/api/activate", json=payload)
         resp.raise_for_status()
         data = resp.json()
 
+        logger.info("MuninnDB raw response type=%s keys=%s", type(data).__name__, list(data.keys()) if isinstance(data, dict) else "N/A")
         activations = data if isinstance(data, list) else data.get("activations", [])
+        logger.info("MuninnDB returned %d activations for vault '%s'", len(activations), v)
+        if activations:
+            logger.debug("First activation keys: %s", list(activations[0].keys()) if isinstance(activations[0], dict) else type(activations[0]))
         cases: list[ConsultingCase] = []
         scores: list[float] = []
 
@@ -202,7 +284,7 @@ class MuninnBackend(MemoryBackend):
 
     async def get_case(self, case_id: str, vault: str = "default") -> ConsultingCase | None:
         v = vault or self.default_vault
-        http = await self._get_http()
+        http = await self._get_http(v)
         try:
             resp = await http.get(f"/api/engrams/{case_id}", params={"vault": v})
             resp.raise_for_status()
@@ -271,7 +353,7 @@ class MuninnBackend(MemoryBackend):
     async def get_stats(self, vault: str = "default") -> dict[str, Any]:
         """Get vault statistics from MuninnDB."""
         v = vault or self.default_vault
-        http = await self._get_http()
+        http = await self._get_http(v)
         resp = await http.get("/api/stats", params={"vault": v})
         resp.raise_for_status()
         return resp.json()
