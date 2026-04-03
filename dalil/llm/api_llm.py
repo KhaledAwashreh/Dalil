@@ -36,7 +36,7 @@ class APILLM(LLMInterface):
         provider: str = "",
         temperature: float = 0.3,
         max_tokens: int = 2048,
-        timeout: float = 60.0,
+        timeout: float = 120.0,
     ):
         self._model = model
         self.api_key = api_key

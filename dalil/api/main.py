@@ -66,9 +66,16 @@ async def lifespan(app: FastAPI):
         timeout=settings.muninn.timeout,
     )
 
-    # Initialize LLM
-    llm = create_llm(settings.llm)
-    logger.info("LLM configured: %s (%s)", llm.__class__.__name__, llm.model_name)
+    # Initialize LLM (optional — Dalil can run retrieval-only without one)
+    llm = None
+    if settings.llm and settings.llm.model:
+        try:
+            llm = create_llm(settings.llm)
+            logger.info("LLM configured: %s (%s)", llm.__class__.__name__, llm.model_name)
+        except Exception as e:
+            logger.warning("LLM init failed — running in retrieval-only mode: %s", e)
+    else:
+        logger.info("No LLM configured — running in retrieval-only mode")
 
     # Initialize services
     consult_service = ConsultService(
@@ -103,8 +110,8 @@ async def health():
     return HealthResponse(
         status="ok" if muninn_ok else "degraded",
         muninn_connected=muninn_ok,
-        llm_provider=llm.__class__.__name__,
-        llm_model=llm.model_name,
+        llm_provider=llm.__class__.__name__ if llm else "none",
+        llm_model=llm.model_name if llm else "none",
     )
 
 

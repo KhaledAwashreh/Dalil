@@ -25,7 +25,7 @@ from dalil.analytics.events import ConsultEvent
 from dalil.analytics.logger import log_consult_event
 from dalil.analytics.metrics import metrics
 from dalil.ingestion.normalizer import normalize_text
-from dalil.llm.interface import LLMInterface
+from dalil.llm.interface import LLMInterface, NoLLM
 from dalil.memory.backend import MemoryBackend, RetrievalResult
 from dalil.services.prompt_builder import build_consult_prompt
 from dalil.services.response_formatter import format_response
@@ -40,11 +40,11 @@ class ConsultService:
     def __init__(
         self,
         memory: MemoryBackend,
-        llm: LLMInterface,
+        llm: LLMInterface | None = None,
         default_vault: str = "default",
     ):
         self.memory = memory
-        self.llm = llm
+        self.llm = llm or NoLLM()
         self.default_vault = default_vault
         # Cache request_id → (case_ids, vault) for feedback lookup
         self._request_cases: dict[str, tuple[list[str], str]] = {}
@@ -110,17 +110,17 @@ class ConsultService:
             event.llm_provider = self.llm.__class__.__name__
             event.llm_model = self.llm.model_name
 
-            # 6. Build prompt
-            prompt = build_consult_prompt(
-                problem=problem,
-                context=context,
-                cases=cases_result.cases,
-                tags=tags,
-            )
-
-            # 7. Call LLM
-            recommendation = await self.llm.generate(prompt)
-            metrics.increment("llm_calls")
+            # 6-7. Build prompt and call LLM (skipped if no LLM configured)
+            recommendation = ""
+            if not isinstance(self.llm, NoLLM):
+                prompt = build_consult_prompt(
+                    problem=problem,
+                    context=context,
+                    cases=cases_result.cases,
+                    tags=tags,
+                )
+                recommendation = await self.llm.generate(prompt)
+                metrics.increment("llm_calls")
 
             # 8. Format response
             result = format_response(

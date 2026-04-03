@@ -22,3 +22,14 @@ class LLMInterface(ABC):
     def model_name(self) -> str:
         """Return the identifier of the active model."""
         ...
+
+
+class NoLLM(LLMInterface):
+    """Stub used when no LLM is configured. Returns empty recommendations."""
+
+    async def generate(self, prompt: str, **kwargs) -> str:
+        return ""
+
+    @property
+    def model_name(self) -> str:
+        return "none"
