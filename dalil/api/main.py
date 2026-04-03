@@ -14,16 +14,10 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from dalil.api.models import (
-    CloneVaultRequest,
-    CloneVaultResponse,
     ConsolidateCasesRequest,
     ConsolidateCasesResponse,
     ConsultRequest,
     ConsultResponse,
-    CreateVaultRequest,
-    CreateVaultResponse,
-    DeleteVaultRequest,
-    DeleteVaultResponse,
     EntityCasesResponse,
     EntityDetailResponse,
     EntityListResponse,
@@ -32,13 +26,11 @@ from dalil.api.models import (
     EvolveCaseResponse,
     FeedbackRequest,
     FeedbackResponse,
-    GetVaultKeyResponse,
     HealthResponse,
     IngestConfluenceRequest,
     IngestCSVRequest,
     IngestPDFRequest,
     IngestResponse,
-    ListVaultsResponse,
     RecentMemoriesResponse,
     SetCaseStateRequest,
     SetCaseStateResponse,
@@ -433,104 +425,6 @@ async def vault_stats(vault: str = "default"):
         )
     except Exception as e:
         logger.exception("Failed to get vault stats")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/vault/create", response_model=CreateVaultResponse)
-async def create_vault(req: CreateVaultRequest):
-    """Create a new vault for client/project isolation."""
-    try:
-        result = await memory.create_vault(
-            vault_name=req.name,
-            description=req.description,
-        )
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to create vault '{req.name}'",
-            )
-        return CreateVaultResponse(
-            vault_name=req.name,
-            created=True,
-            message=f"Vault '{req.name}' created successfully",
-            details=result if isinstance(result, dict) else {},
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Failed to create vault")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/vault/list", response_model=ListVaultsResponse)
-async def list_vaults():
-    """List all available vaults."""
-    try:
-        vaults = await memory.list_vaults()
-        return ListVaultsResponse(vaults=vaults, count=len(vaults))
-    except Exception as e:
-        logger.exception("Failed to list vaults")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/vault/{vault_name}", response_model=DeleteVaultResponse)
-async def delete_vault(vault_name: str, force: bool = False):
-    """Delete a vault and all its memories."""
-    try:
-        success = await memory.delete_vault(vault_name, force=force)
-        return DeleteVaultResponse(
-            vault_name=vault_name,
-            deleted=success,
-            message=f"Vault '{vault_name}' deleted" if success else f"Failed to delete vault '{vault_name}'",
-        )
-    except Exception as e:
-        logger.exception("Failed to delete vault")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/vault/clone", response_model=CloneVaultResponse)
-async def clone_vault(req: CloneVaultRequest):
-    """Clone a vault into a new one."""
-    try:
-        result = await memory.clone_vault(req.source, req.dest)
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to clone vault '{req.source}' to '{req.dest}'",
-            )
-        return CloneVaultResponse(
-            source=req.source,
-            dest=req.dest,
-            cloned=True,
-            message=f"Vault '{req.source}' cloned to '{req.dest}' successfully",
-            details=result if isinstance(result, dict) else {},
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Failed to clone vault")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/vault/{vault_name}/key", response_model=GetVaultKeyResponse)
-async def get_vault_key(vault_name: str):
-    """Get the stored API key for a vault."""
-    try:
-        token = memory.get_vault_key(vault_name)
-        if token:
-            # Mask the token in response for security
-            masked = token[:6] + "..." + token[-4:]
-            return GetVaultKeyResponse(
-                vault_name=vault_name,
-                token=masked,
-                found=True,
-            )
-        return GetVaultKeyResponse(
-            vault_name=vault_name,
-            found=False,
-        )
-    except Exception as e:
-        logger.exception("Failed to get vault key")
         raise HTTPException(status_code=500, detail=str(e))
 
 
