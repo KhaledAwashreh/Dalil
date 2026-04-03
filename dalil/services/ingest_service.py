@@ -115,15 +115,23 @@ class IngestService:
             parse_confluence_url,
         )
 
-        # If a URL is provided, parse it to get page_id
+        # If a URL is provided, parse it to get page_id and base_url
         source_uri = ""
+        confluence_base_url = self.settings.ingestion.confluence_base_url
         if url:
             parsed = parse_confluence_url(url)
             page_id = parsed["page_id"]
+            confluence_base_url = confluence_base_url or parsed["base_url"]
             source_uri = url
 
+        if not confluence_base_url:
+            raise ValueError(
+                "No Confluence base URL configured. Provide a full page URL "
+                "or set ingestion.confluence_base_url in config."
+            )
+
         loader = ConfluenceLoader(
-            base_url=self.settings.ingestion.confluence_base_url,
+            base_url=confluence_base_url,
             email=self.settings.ingestion.confluence_email,
             token=self.settings.ingestion.confluence_token,
         )

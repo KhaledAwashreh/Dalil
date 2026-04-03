@@ -74,8 +74,8 @@ def load_csv(
 
         # Collect extra columns as metadata
         metadata = {
-            k: v for k, v in row.items()
-            if k not in KNOWN_FIELDS and v
+            k: str(v) for k, v in row.items()
+            if k and k not in KNOWN_FIELDS and v is not None and str(v).strip()
         }
 
         case_type_str = row.get("type", "")
