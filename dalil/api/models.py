@@ -22,6 +22,14 @@ class SimilarCase(BaseModel):
     type: str
     industry: str
     score: float
+    content: str = ""
+    summary: str = ""
+    problem: str = ""
+    solution: str = ""
+    outcome: str = ""
+    context: str = ""
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
 
 
 class Source(BaseModel):

@@ -28,6 +28,14 @@ def format_response(
             "type": case.type.value,
             "industry": case.industry,
             "score": (scores[i] if scores and i < len(scores) else 0.0),
+            "content": case.content,
+            "summary": case.summary,
+            "problem": case.problem,
+            "solution": case.solution,
+            "outcome": case.outcome,
+            "context": case.context,
+            "tags": case.tags,
+            "metadata": case.metadata,
         })
 
         source_key = f"{case.source_type.value}:{case.source_uri}"
