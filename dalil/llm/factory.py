@@ -4,7 +4,7 @@ LLM Factory — instantiates the correct LLM backend from config.
 
 from __future__ import annotations
 
-from dalil.config.settings import LLMSettings
+from dalil.config.settings import LLM_PROVIDER_BASE_URLS, LLMSettings
 from dalil.llm.interface import LLMInterface
 
 
@@ -47,12 +47,9 @@ def create_llm(settings: LLMSettings) -> LLMInterface:
     # Provider-specific base_url defaults
     base_url = settings.base_url
     if not base_url:
-        provider_defaults = {
-            "openai": "https://api.openai.com/v1",
-            "ollama": "http://localhost:11434/v1",
-            "anthropic": "https://api.anthropic.com/v1",
-        }
-        base_url = provider_defaults.get(settings.provider, "https://api.openai.com/v1")
+        base_url = LLM_PROVIDER_BASE_URLS.get(
+            settings.provider, "https://api.openai.com/v1"
+        )
 
     return APILLM(
         model=settings.model,

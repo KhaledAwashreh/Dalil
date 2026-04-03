@@ -9,9 +9,14 @@ services:
     image: ghcr.io/scrypster/muninndb:latest
     container_name: dalil-muninndb
     environment:
-      # Embedding — set EMBED_PROVIDER and EMBED_API_KEY in .env
-      # Supported: MUNINN_JINA_KEY, MUNINN_OPENAI_KEY, MUNINN_COHERE_KEY, etc.
-      MUNINN_OPENAI_KEY: "${EMBED_API_KEY:-}"
+      # Embedding — set the key for your provider in .env
+      # MuninnDB auto-detects which provider to use based on which key is set
+      MUNINN_OPENAI_KEY: "${MUNINN_OPENAI_KEY:-}"
+      MUNINN_JINA_KEY: "${MUNINN_JINA_KEY:-}"
+      MUNINN_COHERE_KEY: "${MUNINN_COHERE_KEY:-}"
+      MUNINN_GOOGLE_KEY: "${MUNINN_GOOGLE_KEY:-}"
+      MUNINN_MISTRAL_KEY: "${MUNINN_MISTRAL_KEY:-}"
+      MUNINN_VOYAGE_KEY: "${MUNINN_VOYAGE_KEY:-}"
     ports:
       - "8000:8000"   # Dalil API (shared network namespace)
       - "8474:8474"   # Internal API

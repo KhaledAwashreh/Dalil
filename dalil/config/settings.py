@@ -41,8 +41,9 @@ class IngestionSettings:
 
 @dataclass
 class EmbeddingSettings:
-    enabled: bool = False  # disabled by default — MuninnDB handles embeddings
-    model_name: str = "all-MiniLM-L6-v2"
+    provider: str = ""  # openai, jina, cohere, google, mistral, voyage, ollama
+    api_key: str = ""
+    model_name: str = ""  # optional — MuninnDB uses provider default if empty
 
 
 @dataclass
@@ -98,7 +99,8 @@ def load_settings(config_path: str | None = None) -> Settings:
         if "embeddings" in data:
             emb = data["embeddings"]
             settings.embeddings = EmbeddingSettings(
-                enabled=emb.get("enabled", settings.embeddings.enabled),
+                provider=emb.get("provider", settings.embeddings.provider),
+                api_key=emb.get("api_key", settings.embeddings.api_key),
                 model_name=emb.get("model_name", settings.embeddings.model_name),
             )
 
@@ -113,5 +115,47 @@ def load_settings(config_path: str | None = None) -> Settings:
     settings.llm.api_key = os.environ.get("LLM_API_KEY") or settings.llm.api_key
     settings.llm.base_url = os.environ.get("LLM_BASE_URL") or settings.llm.base_url
     settings.llm.model = os.environ.get("LLM_MODEL") or settings.llm.model
+    settings.embeddings.provider = os.environ.get("EMBED_PROVIDER") or settings.embeddings.provider
+    settings.embeddings.api_key = os.environ.get("EMBED_API_KEY") or settings.embeddings.api_key
 
     return settings
+
+
+# ── Provider mappings ──────────────────────────────────────────────
+
+# MuninnDB env var name for each embedding provider
+EMBED_PROVIDER_ENV_MAP: dict[str, str] = {
+    "openai": "MUNINN_OPENAI_KEY",
+    "jina": "MUNINN_JINA_KEY",
+    "cohere": "MUNINN_COHERE_KEY",
+    "google": "MUNINN_GOOGLE_KEY",
+    "mistral": "MUNINN_MISTRAL_KEY",
+    "voyage": "MUNINN_VOYAGE_KEY",
+}
+
+# Default base_url for each LLM provider (used when base_url is empty)
+LLM_PROVIDER_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "ollama": "http://localhost:11434/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "fireworks": "https://api.fireworks.ai/inference/v1",
+}
+
+
+def resolve_muninn_embed_env(settings: Settings) -> dict[str, str]:
+    """Return the MuninnDB env var dict for the configured embedding provider.
+
+    Example: provider="openai", api_key="sk-..." → {"MUNINN_OPENAI_KEY": "sk-..."}
+    """
+    provider = settings.embeddings.provider.lower().strip()
+    api_key = settings.embeddings.api_key
+    if not provider or not api_key:
+        return {}
+    env_var = EMBED_PROVIDER_ENV_MAP.get(provider)
+    if not env_var:
+        return {}
+    return {env_var: api_key}

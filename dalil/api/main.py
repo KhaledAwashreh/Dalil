@@ -24,7 +24,7 @@ from dalil.api.models import (
     IngestResponse,
     VaultStatsResponse,
 )
-from dalil.config.settings import Settings, load_settings
+from dalil.config.settings import Settings, load_settings, resolve_muninn_embed_env
 from dalil.llm.factory import create_llm
 from dalil.llm.interface import LLMInterface
 from dalil.memory.backend import MemoryBackend
@@ -65,6 +65,13 @@ async def lifespan(app: FastAPI):
         default_vault=settings.muninn.default_vault,
         timeout=settings.muninn.timeout,
     )
+
+    # Log embedding provider
+    embed_env = resolve_muninn_embed_env(settings)
+    if embed_env:
+        logger.info("Embedding provider: %s", settings.embeddings.provider)
+    else:
+        logger.info("No embedding provider configured — MuninnDB will use its default")
 
     # Initialize LLM (optional — Dalil can run retrieval-only without one)
     llm = None
