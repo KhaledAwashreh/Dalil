@@ -78,3 +78,4 @@ echo "Next steps:"
 echo "  1. Copy config/config.example.json to config.json and edit it"
 echo "  2. pip install -r requirements.txt"
 echo "  3. CONSULTANT_CONFIG=config.json uvicorn dalil.api.main:app"
+

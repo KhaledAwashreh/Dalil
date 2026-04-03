@@ -16,3 +16,4 @@ fi
 
 # Exec the original command (MuninnDB server)
 exec "$@"
+

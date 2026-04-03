@@ -223,3 +223,51 @@ class SetCaseStateResponse(BaseModel):
     case_id: str
     state: str
     success: bool
+
+
+# --- Vault Management ---
+
+class CreateVaultRequest(BaseModel):
+    name: str = Field(..., description="Name of the new vault")
+    description: str = Field("", description="Optional description of the vault")
+
+
+class CreateVaultResponse(BaseModel):
+    vault_name: str
+    created: bool
+    message: str = ""
+    details: dict = Field(default_factory=dict)
+
+
+class ListVaultsResponse(BaseModel):
+    vaults: list[str] = Field(default_factory=list, description="List of vault names")
+    count: int = 0
+
+
+class DeleteVaultRequest(BaseModel):
+    force: bool = Field(False, description="Force delete even if vault has memories")
+
+
+class DeleteVaultResponse(BaseModel):
+    vault_name: str
+    deleted: bool
+    message: str = ""
+
+
+class CloneVaultRequest(BaseModel):
+    source: str = Field(..., description="Source vault name to clone from")
+    dest: str = Field(..., description="Destination vault name")
+
+
+class CloneVaultResponse(BaseModel):
+    source: str
+    dest: str
+    cloned: bool
+    message: str = ""
+    details: dict = Field(default_factory=dict)
+
+
+class GetVaultKeyResponse(BaseModel):
+    vault_name: str
+    token: str = Field(default="", description="API key/token for the vault")
+    found: bool = False

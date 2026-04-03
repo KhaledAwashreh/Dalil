@@ -611,6 +611,116 @@ class MuninnBackend(MemoryBackend):
             logger.warning("muninn_state failed for %s: %s", case_id, e)
             return False
 
+    # ── Vault Management ────────────────────────────────────────────
+
+    def _load_vault_registry(self) -> dict:
+        """Load full vault registry from .dalil/vaults.json."""
+        for path in _VAULTS_PATHS:
+            if path.exists():
+                try:
+                    return json.loads(path.read_text())
+                except (json.JSONDecodeError, KeyError):
+                    continue
+        return {}
+
+    def _save_vault_registry(self, vaults: dict) -> None:
+        """Save vault registry to .dalil/vaults.json."""
+        for path in _VAULTS_PATHS:
+            # Try to write to the first writable path
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(vaults, indent=2) + "\n")
+                logger.debug("Saved vault registry to %s", path)
+                return
+            except (OSError, IOError):
+                continue
+
+    async def list_vaults(self) -> list[str]:
+        """List all vaults via MuninnDB MCP."""
+        try:
+            result = await self._mcp_call("muninn_list_vaults", {})
+            if isinstance(result, list):
+                return result
+            elif isinstance(result, dict):
+                # Handle text-block MCP response
+                if "content" in result and isinstance(result["content"], list):
+                    vaults = []
+                    for item in result["content"]:
+                        if isinstance(item, dict) and "text" in item:
+                            vaults.extend(item["text"].strip().split("\n"))
+                    return [v.strip() for v in vaults if v.strip()]
+                return list(result.get("vaults", []))
+            return []
+        except Exception as e:
+            logger.warning("muninn_list_vaults failed: %s", e)
+            return []
+
+    async def create_vault(self, vault_name: str, description: str = "") -> dict | None:
+        """Create a new vault via MuninnDB MCP."""
+        try:
+            result = await self._mcp_call("muninn_create_vault", {
+                "name": vault_name,
+                "description": description,
+            })
+            logger.info("Created vault '%s'", vault_name)
+            return result if isinstance(result, dict) else {"name": vault_name}
+        except Exception as e:
+            logger.warning("muninn_create_vault failed for '%s': %s", vault_name, e)
+            return None
+
+    async def delete_vault(self, vault_name: str, force: bool = False) -> bool:
+        """Delete a vault and remove from registry."""
+        try:
+            args = {"name": vault_name}
+            if force:
+                args["force"] = True
+            await self._mcp_call("muninn_delete_vault", args)
+            
+            # Remove from vault registry
+            vaults = self._load_vault_registry()
+            vaults.pop(vault_name, None)
+            self._save_vault_registry(vaults)
+            
+            logger.info("Deleted vault '%s'", vault_name)
+            return True
+        except Exception as e:
+            logger.warning("muninn_delete_vault failed for '%s': %s", vault_name, e)
+            return False
+
+    async def clone_vault(self, source: str, dest: str) -> dict | None:
+        """Clone a vault and generate API key for the new vault."""
+        try:
+            result = await self._mcp_call("muninn_clone_vault", {
+                "source": source,
+                "dest": dest,
+            })
+            logger.info("Cloned vault '%s' -> '%s'", source, dest)
+            return result if isinstance(result, dict) else {"source": source, "dest": dest}
+        except Exception as e:
+            logger.warning("muninn_clone_vault failed: %s", e)
+            return None
+
+    def get_vault_key(self, vault_name: str) -> str | None:
+        """Get stored API key for a vault from registry."""
+        vaults = self._load_vault_registry()
+        if vault_name in vaults and "token" in vaults[vault_name]:
+            return vaults[vault_name]["token"]
+        return None
+
+    def set_vault_key(self, vault_name: str, token: str) -> bool:
+        """Store API key for a vault in registry."""
+        try:
+            vaults = self._load_vault_registry()
+            if vault_name not in vaults:
+                vaults[vault_name] = {}
+            vaults[vault_name]["token"] = token
+            self._save_vault_registry(vaults)
+            logger.debug("Stored API key for vault '%s'", vault_name)
+            return True
+        except Exception as e:
+            logger.warning("Failed to store vault key: %s", e)
+            return False
+
     # ── Lifecycle ───────────────────────────────────────────────────
 
     async def health_check(self) -> bool:

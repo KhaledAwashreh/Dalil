@@ -1,7 +1,7 @@
 {
 	"info": {
 		"name": "Dalil API",
-		"description": "Local testing collection for the Dalil consulting memory system API.",
+		"description": "Complete testing collection for the Dalil consulting memory system API. All 18 endpoints documented.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -12,11 +12,23 @@
 		{
 			"key": "vault",
 			"value": "default"
+		},
+		{
+			"key": "case_id",
+			"value": "case-123"
+		},
+		{
+			"key": "entity_name",
+			"value": "digital-transformation"
+		},
+		{
+			"key": "request_id",
+			"value": "req-123"
 		}
 	],
 	"item": [
 		{
-			"name": "Health",
+			"name": "Health & Status",
 			"item": [
 				{
 					"name": "Health Check",
@@ -25,17 +37,163 @@
 						"header": [],
 						"url": {
 							"raw": "{{base_url}}/health",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["health"]
 						},
 						"description": "Check API health, MuninnDB connectivity, and LLM status."
+					},
+					"response": []
+				},
+				{
+					"name": "Vault Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/stats?vault={{vault}}",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "stats"],
+							"query": [
+								{
+									"key": "vault",
+									"value": "{{vault}}"
+								}
+							]
+						},
+						"description": "Get statistics and metrics for a vault (case count, entity count, etc)."
+					},
+					"response": []
+				},
+				{
+					"name": "Recent Memories",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/session/recent?vault={{vault}}&limit=10",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["session", "recent"],
+							"query": [
+								{
+									"key": "vault",
+									"value": "{{vault}}"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get recently accessed or created consulting sessions and memories."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Vault",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"acme-corp\",\n  \"description\": \"ACME Corporation consulting engagement vault for Q2 2026\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vault/create",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "create"]
+						},
+						"description": "Create a new vault for client/project isolation. Each vault has independent case storage and cognitive memory."
+					},
+					"response": []
+				},
+				{
+					"name": "List Vaults",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/list",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "list"]
+						},
+						"description": "List all available vaults."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Vault",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/acme-corp?force=false",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "acme-corp"],
+							"query": [
+								{
+									"key": "force",
+									"value": "false"
+								}
+							]
+						},
+						"description": "Delete a vault and all its memories. Use force=true to delete even if vault has memories."
+					},
+					"response": []
+				},
+				{
+					"name": "Clone Vault",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"source\": \"acme-corp\",\n  \"dest\": \"acme-corp-backup\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vault/clone",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "clone"]
+						},
+						"description": "Clone a vault and all its memories to a new vault."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Vault Key",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/acme-corp/key",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "acme-corp", "key"]
+						},
+						"description": "Get the stored API key for a vault (masked for security)."
 					},
 					"response": []
 				}
 			]
 		},
 		{
-			"name": "Consult",
+			"name": "Consulting",
 			"item": [
 				{
 					"name": "Consult — Basic",
@@ -53,10 +211,11 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/consult",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["consult"]
 						},
-						"description": "Submit a basic consulting query with just a problem statement."
+						"description": "Submit a basic consulting query with just a problem statement. Uses default vault."
 					},
 					"response": []
 				},
@@ -76,17 +235,66 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/consult",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["consult"]
 						},
-						"description": "Submit a consulting query with full context, tags, and vault."
+						"description": "Submit a consulting query with full context, tags, and vault specification. Returns matching cases and LLM synthesis."
+					},
+					"response": []
+				},
+				{
+					"name": "Provide Feedback",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"request_id\": \"{{request_id}}\",\n  \"signal\": \"useful\",\n  \"case_ids\": [\"case-1\", \"case-2\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/feedback",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["feedback"]
+						},
+						"description": "Provide feedback on consultation results for relevance model training. Legacy format uses signal + case_ids."
+					},
+					"response": []
+				},
+				{
+					"name": "Provide Feedback (New Format)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"request_id\": \"{{request_id}}\",\n  \"results\": [\n    {\"case_id\": \"case-1\", \"relevant\": true},\n    {\"case_id\": \"case-2\", \"relevant\": false}\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/feedback",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["feedback"]
+						},
+						"description": "Provide granular per-case feedback. New format with explicit relevance for each case."
 					},
 					"response": []
 				}
 			]
 		},
 		{
-			"name": "Ingest — CSV",
+			"name": "Ingestion — CSV",
 			"item": [
 				{
 					"name": "Ingest CSV (server path)",
@@ -104,7 +312,8 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/csv",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "csv"]
 						},
 						"description": "Ingest a CSV file by server-side path. CSV must have at least 'title' and 'content' columns."
@@ -140,7 +349,8 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/csv/upload",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "csv", "upload"]
 						},
 						"description": "Upload a CSV file directly. CSV must have at least 'title' and 'content' columns."
@@ -150,7 +360,7 @@
 			]
 		},
 		{
-			"name": "Ingest — PDF",
+			"name": "Ingestion — PDF",
 			"item": [
 				{
 					"name": "Ingest PDF (server path)",
@@ -168,7 +378,8 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/pdf",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "pdf"]
 						},
 						"description": "Ingest a PDF file by server-side path. PDF will be chunked automatically."
@@ -204,7 +415,8 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/pdf/upload",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "pdf", "upload"]
 						},
 						"description": "Upload a PDF file directly. PDF will be chunked automatically."
@@ -214,7 +426,7 @@
 			]
 		},
 		{
-			"name": "Ingest — Confluence",
+			"name": "Ingestion — Confluence",
 			"item": [
 				{
 					"name": "Ingest Confluence Page (by URL)",
@@ -232,7 +444,8 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/confluence",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "confluence"]
 						},
 						"description": "Ingest a single Confluence page by its full URL."
@@ -255,7 +468,8 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/confluence",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "confluence"]
 						},
 						"description": "Ingest a single Confluence page by its page ID."
@@ -278,10 +492,210 @@
 						},
 						"url": {
 							"raw": "{{base_url}}/ingest/confluence",
-							"host": ["{{base_url}}"],
+							"host": ["localhost"],
+							"port": "8000",
 							"path": ["ingest", "confluence"]
 						},
 						"description": "Ingest all pages from a Confluence space (up to the limit). Requires confluence_base_url, confluence_token, and confluence_email in config."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Case Management",
+			"item": [
+				{
+					"name": "Evolve Case",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated case title\",\n  \"content\": \"Updated content with new insights\",\n  \"tags\": [\"updated\", \"v2\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/cases/{{case_id}}",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["cases", "{{case_id}}"]
+						},
+						"description": "Update/evolve an existing case with new title, content, or tags."
+					},
+					"response": []
+				},
+				{
+					"name": "Set Case State",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"state\": \"archived\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/cases/{{case_id}}/state",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["cases", "{{case_id}}", "state"]
+						},
+						"description": "Set the state of a case (e.g., active, archived, deprecated)."
+					},
+					"response": []
+				},
+				{
+					"name": "Consolidate Cases",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"case_ids\": [\"case-1\", \"case-2\", \"case-3\"],\n  \"vault\": \"{{vault}}\",\n  \"title\": \"Consolidated Case\",\n  \"rationale\": \"These cases describe the same pattern with variation\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/cases/consolidate",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["cases", "consolidate"]
+						},
+						"description": "Merge multiple related cases into a single consolidated case."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Entity Management",
+			"item": [
+				{
+					"name": "List Entities",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/entities?vault={{vault}}&limit=50",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "entities"],
+							"query": [
+								{
+									"key": "vault",
+									"value": "{{vault}}"
+								},
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							]
+						},
+						"description": "List all entities (people, companies, concepts) in a vault."
+					},
+					"response": []
+				},
+				{
+					"name": "Entity Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/entities/{{entity_name}}?vault={{vault}}",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "entities", "{{entity_name}}"],
+							"query": [
+								{
+									"key": "vault",
+									"value": "{{vault}}"
+								}
+							]
+						},
+						"description": "Get detailed information about a specific entity (mentions, confidence, properties)."
+					},
+					"response": []
+				},
+				{
+					"name": "Entity Timeline",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/entities/{{entity_name}}/timeline?vault={{vault}}",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "entities", "{{entity_name}}", "timeline"],
+							"query": [
+								{
+									"key": "vault",
+									"value": "{{vault}}"
+								}
+							]
+						},
+						"description": "Get the timeline of an entity's evolution and mentions across cases."
+					},
+					"response": []
+				},
+				{
+					"name": "Entity Cases",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vault/entities/{{entity_name}}/cases?vault={{vault}}",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["vault", "entities", "{{entity_name}}", "cases"],
+							"query": [
+								{
+									"key": "vault",
+									"value": "{{vault}}"
+								}
+							]
+						},
+						"description": "Get all cases that mention a specific entity."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Graph Traversal",
+			"item": [
+				{
+					"name": "Traverse Graph",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"start_id\": \"entity-or-case-id\",\n  \"vault\": \"{{vault}}\",\n  \"depth\": 3,\n  \"relationship_types\": [\"mentions\", \"involves\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/traverse",
+							"host": ["localhost"],
+							"port": "8000",
+							"path": ["traverse"]
+						},
+						"description": "Traverse the knowledge graph from a starting entity/case, following relationships up to specified depth."
 					},
 					"response": []
 				}
