@@ -125,7 +125,7 @@ README.md              # Project overview (condensed)
 
 **muninn_adapter.py**
 - HTTP client to MuninnDB (REST + MCP endpoints)
-- Wraps MuninnDB tools: `muninn_remember`, `muninn_activate`, `muninn_feedback`, etc.
+- Wraps MuninnDB tools: `muninn_remember`, `muninn_recall`, `muninn_feedback`, etc.
 - Handles failover, retries, error parsing
 
 **cases_schema.py**
