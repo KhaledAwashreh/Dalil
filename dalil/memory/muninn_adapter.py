@@ -277,6 +277,8 @@ class MuninnBackend(MemoryBackend):
                 "tags": act.get("tags", []),
                 "confidence": act.get("confidence", 0.8),
                 "entities": act.get("entities", []),
+                "score": act.get("score", 0.0),
+                "why": act.get("why", ""),
             }
             case = ConsultingCase.from_engram(engram_dict)
 

@@ -68,6 +68,30 @@ class ConsultingCase(BaseModel):
     confidence: float = 0.8
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # G1: Store MuninnDB ACTIVATE response metadata for ranking and explanation
+    activate_score: float = 0.0  # Composite score from BM25 + temporal + Hebbian + graph
+    activate_why: str = ""  # Score breakdown: "BM25(0.78) + hebbian_boost(0.16) + assoc_depth1(0.06)"
+
+    def get_structured_tags(self) -> list[str]:
+        """Generate structured tags for MuninnDB filtering.
+        
+        Returns tags in format 'key:value' that enable fast pre-filtering
+        in ACTIVATE without requiring content parsing.
+        """
+        structured = list(self.tags)  # Include existing tags
+        
+        # Add categorical filters
+        if self.type != CaseType.OTHER:
+            structured.append(f"type:{self.type.value}")
+        if self.industry:
+            structured.append(f"industry:{self.industry}")
+        if self.source_type != SourceType.MANUAL:
+            structured.append(f"source:{self.source_type.value}")
+        if self.client_name:
+            structured.append(f"client:{self.client_name}")
+        
+        return structured
 
     def to_engram_content(self) -> str:
         """Serialize case data into engram content string."""
@@ -104,12 +128,13 @@ class ConsultingCase(BaseModel):
 
         Includes inline enrichment fields (summary, entities, relationships)
         when populated, so MuninnDB can skip its own extraction for those.
+        Uses structured tags for filtering (industry:fintech, type:engagement, etc.)
         """
         args: dict[str, Any] = {
             "vault": vault,
             "concept": self.title[:512],
             "content": self.to_engram_content()[:16384],
-            "tags": self.tags,
+            "tags": self.get_structured_tags(),  # ← G4: Use structured tags instead of raw tags
             "confidence": self.confidence,
         }
         if self.summary:
@@ -131,7 +156,7 @@ class ConsultingCase(BaseModel):
             "vault": vault,
             "concept": self.title[:512],
             "content": self.to_engram_content()[:16384],
-            "tags": self.tags,
+            "tags": self.get_structured_tags(),
             "type_label": self.type.value,
             "confidence": self.confidence,
             "created_at": self.created_at.isoformat(),
@@ -180,7 +205,7 @@ class ConsultingCase(BaseModel):
             if isinstance(e, dict)
         ]
 
-        return ConsultingCase(
+        case = ConsultingCase(
             id=case_body.get("case_id", engram.get("id", "")),
             type=CaseType(case_body.get("type", "other")),
             title=engram.get("concept", ""),
@@ -200,3 +225,8 @@ class ConsultingCase(BaseModel):
             confidence=engram.get("confidence", 0.8),
             metadata=case_body.get("metadata", {}),
         )
+        
+        case.activate_score = engram.get("score", 0.0)
+        case.activate_why = engram.get("why", "")
+        
+        return case

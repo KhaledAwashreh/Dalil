@@ -94,7 +94,14 @@ class ConsultService:
             metrics.increment("memory_queries")
             metrics.increment("memory_hits", len(cases_result.cases))
 
-            # Cache case IDs for feedback
+            ranked = sorted(
+                zip(cases_result.cases, cases_result.scores),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            cases_result.cases = [c for c, _ in ranked]
+            cases_result.scores = [s for _, s in ranked]
+
             case_ids = [c.id for c in cases_result.cases]
             self._request_cases[request_id] = (case_ids, vault, query_with_context)
 

@@ -23,7 +23,7 @@ def format_response(
     seen_sources: set[str] = set()
 
     for i, case in enumerate(cases or []):
-        similar_cases.append({
+        case_data = {
             "id": case.id,
             "title": case.title,
             "type": case.type.value,
@@ -37,7 +37,14 @@ def format_response(
             "context": case.context,
             "tags": case.tags,
             "metadata": case.metadata,
-        })
+        }
+        
+        if case.activate_why:
+            case_data["reasoning"] = case.activate_why
+        if case.activate_score > 0:
+            case_data["cognitive_score"] = round(case.activate_score, 3)
+        
+        similar_cases.append(case_data)
 
         source_key = f"{case.source_type.value}:{case.source_uri}"
         if source_key not in seen_sources and case.source_uri:
@@ -48,9 +55,12 @@ def format_response(
                 "title": case.title,
             })
 
-    # Confidence: average of MuninnDB's native Bayesian confidence scores
     confidence = 0.0
-    if cases:
+    if cases and scores:
+        confidence = round(
+            sum(scores) / len(scores), 2
+        )
+    elif cases:
         confidence = round(
             sum(c.confidence for c in cases) / len(cases), 2
         )
