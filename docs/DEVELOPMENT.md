@@ -38,13 +38,7 @@ dalil vault key --vault production  # Get API key for client
 - **Impact:** Any client can hammer the API
 - **Workaround:** Implement via FastAPI middleware, reverse proxy, or cloud provider (AWS API Gateway, etc.)
 
-### 6. Embeddings Locked at Ingestion Time
-
-- **Status:** By design (MuninnDB embeds at ingestion, cannot re-embed)
-- **Impact:** Changing embedding provider requires re-ingesting all cases
-- **Workaround:** Plan embedding provider strategy before large-scale ingestion
-
-### 7. No Distributed Tracing
+### 6. No Distributed Tracing
 
 - **Status:** Not implemented
 - **Impact:** Cannot trace a consultation request across MuninnDB layers
