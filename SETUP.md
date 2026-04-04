@@ -4,7 +4,7 @@ Step-by-step instructions to get Dalil running from scratch.
 
 ## Prerequisites
 
-- **Python 3.10+**
+- **Python 3.11+**
 - **MuninnDB** (installed below)
 - **An LLM provider** — one of:
   - [Ollama](https://ollama.com) (free, local — recommended for getting started)

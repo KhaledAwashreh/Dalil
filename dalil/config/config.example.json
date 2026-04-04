@@ -1,6 +1,6 @@
 {
   "muninn": {
-    "base_url": "http://localhost:8476",
+    "base_url": "http://localhost:8475",
     "mcp_url": "http://localhost:8750/mcp",
     "token": "",
     "default_vault": "default",

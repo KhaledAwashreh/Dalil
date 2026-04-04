@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/framework-FastAPI-009688" alt="FastAPI">
   <img src="https://img.shields.io/badge/memory-MuninnDB-purple" alt="MuninnDB">
   <img src="https://img.shields.io/badge/LLM-provider--agnostic-orange" alt="Provider Agnostic">

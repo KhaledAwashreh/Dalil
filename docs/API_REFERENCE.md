@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL: `http://localhost:8475/api` (or `http://dalil:8475/api` from Docker Compose)
+Base URL: `http://localhost:8475` (or `http://dalil:8475` from Docker Compose)
 
 All requests/responses use **JSON**.
 
@@ -186,23 +186,7 @@ GET /vault/stats?vault=myproject
 }
 ```
 
-### Vault Health
 
-```http
-GET /vault/health?vault=myproject
-```
-
-**Response (200 OK):**
-```json
-{
-  "vault": "myproject",
-  "status": "healthy",
-  "index_status": "ready",
-  "contradictions": 2,
-  "orphaned_entities": 0,
-  "index_fragmentation_pct": 5.2
-}
-```
 
 ### Recent Cases
 

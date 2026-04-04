@@ -12,7 +12,7 @@ from pathlib import Path
 
 @dataclass
 class MuninnSettings:
-    base_url: str = "http://localhost:8476"
+    base_url: str = "http://localhost:8475"
     mcp_url: str = "http://localhost:8750/mcp"
     token: str = ""
     default_vault: str = "default"

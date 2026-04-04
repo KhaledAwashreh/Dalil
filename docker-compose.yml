@@ -41,7 +41,7 @@ services:
     container_name: dalil-api
     environment:
       # MuninnDB connection — share network namespace with muninndb container
-      MUNINN_URL: "http://127.0.0.1:8476"
+      MUNINN_URL: "http://127.0.0.1:8475"
       MUNINN_TOKEN: "${MUNINN_TOKEN:-}"
 
       # LLM configuration — set in config.json or via env vars
