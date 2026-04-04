@@ -1,0 +1,30 @@
+# Dalil — Docker Compose for Integration Tests
+# Minimal setup for isolated test environments
+# Usage: testcontainers-python will manage this automatically
+
+services:
+  # ---- MuninnDB — cognitive memory database (test instance) ----
+  muninndb:
+    image: ghcr.io/scrypster/muninndb:latest
+    container_name: dalil-muninndb-test
+    entrypoint: ["/bin/sh", "-c", "muninndb-server --daemon --data /data"]
+    environment:
+      # Use local embeddings for faster test startup
+      EMBED_PROVIDER: "local"
+    ports:
+      - "8474:8474"   # Internal API
+      - "8475:8475"   # REST API
+      - "8476:8476"   # Web UI / Dashboard
+      - "8477:8477"   # gRPC
+      - "8750:8750"   # MCP (AI tool integration)
+    volumes:
+      - muninndb-test-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8476 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 20s
+      retries: 5
+
+volumes:
+  muninndb-test-data: {}
