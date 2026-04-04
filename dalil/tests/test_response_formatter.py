@@ -5,7 +5,7 @@ from dalil.services.response_formatter import format_response
 
 
 def test_confidence_is_average_of_case_confidences():
-    """Confidence is the average of MuninnDB Bayesian confidence values on cases."""
+    """Confidence is the average of ACTIVATE cognitive scores when available (G1 preference)."""
     cases = [
         ConsultingCase(title="A", content="a", confidence=0.9),
         ConsultingCase(title="B", content="b", confidence=0.7),
@@ -17,8 +17,8 @@ def test_confidence_is_average_of_case_confidences():
         cases=cases,
         scores=[0.8, 0.6, 0.4],
     )
-    # Average of 0.9, 0.7, 0.5 = 0.7
-    assert result["confidence"] == 0.7
+    # G1: When scores provided, use average of scores (0.8 + 0.6 + 0.4) / 3 = 0.6
+    assert result["confidence"] == 0.6
 
 
 def test_confidence_zero_when_no_cases():
@@ -32,7 +32,7 @@ def test_confidence_zero_when_no_cases():
 
 
 def test_confidence_single_case():
-    """Confidence matches the single case's confidence."""
+    """Confidence matches the ACTIVATE score when available (G1 preference over case confidence)."""
     cases = [ConsultingCase(title="Solo", content="x", confidence=0.85)]
     result = format_response(
         request_id="req-3",
@@ -40,7 +40,8 @@ def test_confidence_single_case():
         cases=cases,
         scores=[0.9],
     )
-    assert result["confidence"] == 0.85
+    # G1: When score provided, use score (0.9) instead of case confidence (0.85)
+    assert result["confidence"] == 0.9
 
 
 def test_score_breakdowns_included_when_provided():
