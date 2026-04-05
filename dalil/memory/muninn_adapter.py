@@ -83,26 +83,28 @@ class MuninnBackend(MemoryBackend):
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8476",
+        base_url: str = "http://localhost:8475",
         mcp_url: str = "http://localhost:8750/mcp",
         token: str | None = None,
         default_vault: str = "default",
         timeout: float = 10.0,
     ):
-        self.base_url = base_url
-        self.rest_url = base_url.replace(":8476", ":8475")
+        self.base_url = base_url.rstrip("/")
         self.mcp_url = mcp_url
         self.token = token
         self.default_vault = default_vault
         self.timeout = timeout
-        self._http: httpx.AsyncClient | None = None
         self._mcp_id = 0
-        self._vault_keys = _load_vault_keys()
 
     def _token_for_vault(self, vault: str | None = None) -> str | None:
-        """Resolve the API key for a vault: vault-specific key > global token > None."""
+        """Resolve the API key for a vault.
+
+        Reloads .dalil/vaults.json on every call so newly-created vaults
+        are picked up without restarting the server.
+        """
         v = vault or self.default_vault
-        return self._vault_keys.get(v) or self.token or None
+        vault_keys = _load_vault_keys()
+        return vault_keys.get(v) or self.token or None
 
     def _headers(self, vault: str | None = None) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -112,25 +114,9 @@ class MuninnBackend(MemoryBackend):
         return headers
 
     async def _get_http(self, vault: str | None = None) -> httpx.AsyncClient:
-        """Get an HTTP client with the right auth for the given vault.
-
-        For vaults using the default token, reuses a persistent client.
-        For vaults with their own key, creates a fresh client (caller should
-        close it via ``async with`` or ``await client.aclose()`` when done,
-        but non-closure is tolerable — httpx cleans up on GC).
-        """
-        token = self._token_for_vault(vault)
-        default_token = self._token_for_vault(self.default_vault)
-        if token == default_token:
-            if self._http is None or self._http.is_closed:
-                self._http = httpx.AsyncClient(
-                    base_url=self.rest_url,
-                    headers=self._headers(vault),
-                    timeout=self.timeout,
-                )
-            return self._http
+        """Get an HTTP client with the correct auth for the given vault."""
         return httpx.AsyncClient(
-            base_url=self.rest_url,
+            base_url=self.base_url,
             headers=self._headers(vault),
             timeout=self.timeout,
         )
@@ -138,7 +124,12 @@ class MuninnBackend(MemoryBackend):
     # ── MCP helper ──────────────────────────────────────────────────
 
     async def _mcp_call(self, tool_name: str, arguments: dict[str, Any]) -> Any:
-        """Send a JSON-RPC 2.0 call to MuninnDB's MCP endpoint."""
+        """Send a JSON-RPC 2.0 call to MuninnDB's MCP endpoint.
+
+        Automatically unwraps the MCP content envelope so callers receive
+        the parsed payload directly (dict, list, or str) rather than the
+        raw ``{"content": [{"type": "text", "text": "..."}]}`` wrapper.
+        """
         self._mcp_id += 1
         payload = {
             "jsonrpc": "2.0",
@@ -162,7 +153,30 @@ class MuninnBackend(MemoryBackend):
                 raise RuntimeError(
                     f"MCP {tool_name} failed: {data['error'].get('message', data['error'])}"
                 )
-            return data.get("result")
+            result = data.get("result")
+            return self._unwrap_mcp_content(result)
+
+    @staticmethod
+    def _unwrap_mcp_content(result: Any) -> Any:
+        """Unwrap MCP content envelope if present.
+
+        MCP tool responses are wrapped as:
+            {"content": [{"type": "text", "text": "<json-string>"}]}
+        This extracts and JSON-parses the first text block.  If the
+        result is not an envelope, it is returned as-is.
+        """
+        if not isinstance(result, dict) or "content" not in result:
+            return result
+        content = result["content"]
+        if not isinstance(content, list):
+            return result
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text" and "text" in item:
+                try:
+                    return json.loads(item["text"])
+                except (json.JSONDecodeError, TypeError):
+                    return item["text"]
+        return result
 
     # ── Ingestion (MCP) ────────────────────────────────────────────
 
@@ -173,13 +187,6 @@ class MuninnBackend(MemoryBackend):
         engram_id = ""
         if isinstance(result, dict):
             engram_id = result.get("id", str(result))
-        elif isinstance(result, list):
-            for item in result:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    engram_id = item.get("text", str(result))
-                    break
-            if not engram_id:
-                engram_id = str(result)
         else:
             engram_id = str(result)
         logger.info("Stored case '%s' as engram %s in vault '%s'", case.title, engram_id, v)
@@ -245,7 +252,6 @@ class MuninnBackend(MemoryBackend):
         max_hops: int = 2,
     ) -> RetrievalResult:
         v = vault or self.default_vault
-        http = await self._get_http(v)
 
         payload: dict[str, Any] = {
             "vault": v,
@@ -257,9 +263,10 @@ class MuninnBackend(MemoryBackend):
         if tags:
             payload["tags"] = tags
 
-        resp = await http.post("/api/activate", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+        async with await self._get_http(v) as http:
+            resp = await http.post("/api/activate", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
 
         logger.info("MuninnDB raw response type=%s keys=%s", type(data).__name__, list(data.keys()) if isinstance(data, dict) else "N/A")
         activations = data if isinstance(data, list) else data.get("activations", [])
@@ -297,11 +304,11 @@ class MuninnBackend(MemoryBackend):
 
     async def get_case(self, case_id: str, vault: str = "default") -> ConsultingCase | None:
         v = vault or self.default_vault
-        http = await self._get_http(v)
         try:
-            resp = await http.get(f"/api/engrams/{case_id}", params={"vault": v})
-            resp.raise_for_status()
-            data = resp.json()
+            async with await self._get_http(v) as http:
+                resp = await http.get(f"/api/engrams/{case_id}", params={"vault": v})
+                resp.raise_for_status()
+                data = resp.json()
             engram_dict = {
                 "id": data.get("id", case_id),
                 "concept": data.get("concept", ""),
@@ -418,18 +425,10 @@ class MuninnBackend(MemoryBackend):
         try:
             result = await self._mcp_call("muninn_explain", {
                 "vault": v,
-                "id": engram_id,
+                "engram_id": engram_id,
             })
             if isinstance(result, dict):
                 return result
-            # Handle text-block MCP responses
-            if isinstance(result, list):
-                for item in result:
-                    if isinstance(item, dict) and "text" in item:
-                        try:
-                            return json.loads(item["text"])
-                        except (json.JSONDecodeError, TypeError):
-                            pass
             return None
         except Exception as e:
             logger.warning("muninn_explain failed for %s: %s", engram_id, e)
@@ -443,14 +442,6 @@ class MuninnBackend(MemoryBackend):
         result = await self._mcp_call("muninn_status", {"vault": v})
         if isinstance(result, dict):
             return result
-        # Handle text-block responses from MCP
-        if isinstance(result, list):
-            for item in result:
-                if isinstance(item, dict) and "text" in item:
-                    try:
-                        return json.loads(item["text"])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
         return {}
 
     async def get_contradictions(
@@ -463,11 +454,8 @@ class MuninnBackend(MemoryBackend):
         )
         if isinstance(result, list):
             return result
-        # Handle text-block responses from MCP
-        if isinstance(result, dict) and "content" in result:
-            content = result["content"]
-            if isinstance(content, list):
-                return content
+        if isinstance(result, dict) and "contradictions" in result:
+            return result["contradictions"]
         return []
 
     # ── Graph traversal & session continuity (MCP) ──────────────
@@ -497,13 +485,19 @@ class MuninnBackend(MemoryBackend):
     async def where_left_off(self, vault: str, limit: int = 5) -> list[dict]:
         v = vault or self.default_vault
         try:
-            result = await self._mcp_call("muninn_where_left_off", {
+            # muninn_session requires 'since' (ISO 8601) — default to last 24h
+            from datetime import datetime, timedelta, timezone
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            result = await self._mcp_call("muninn_session", {
                 "vault": v,
+                "since": since,
                 "limit": limit,
             })
+            if isinstance(result, dict):
+                return result.get("memories", result.get("recent", [result]))
             return result if isinstance(result, list) else []
         except Exception as e:
-            logger.warning("muninn_where_left_off failed: %s", e)
+            logger.warning("muninn_session failed: %s", e)
             return []
 
     # ── Entity graph (MCP) ─────────────────────────────────────
@@ -522,7 +516,7 @@ class MuninnBackend(MemoryBackend):
         try:
             result = await self._mcp_call("muninn_entity", {
                 "vault": v,
-                "entity_name": entity_name,
+                "name": entity_name,
             })
             return result if isinstance(result, dict) else {"raw": result}
         except Exception as e:
@@ -534,7 +528,7 @@ class MuninnBackend(MemoryBackend):
         try:
             result = await self._mcp_call("muninn_entity_timeline", {
                 "vault": v,
-                "entity_name": entity_name,
+                "name": entity_name,
             })
             return result if isinstance(result, list) else []
         except Exception as e:
@@ -546,7 +540,7 @@ class MuninnBackend(MemoryBackend):
         try:
             result = await self._mcp_call("muninn_find_by_entity", {
                 "vault": v,
-                "entity_name": entity_name,
+                "name": entity_name,
             })
             return result if isinstance(result, list) else []
         except Exception as e:
@@ -571,9 +565,12 @@ class MuninnBackend(MemoryBackend):
         self, vault: str, case_id: str, content: str, concept: str | None = None
     ) -> dict | None:
         v = vault or self.default_vault
-        args: dict[str, Any] = {"vault": v, "id": case_id, "content": content}
-        if concept is not None:
-            args["concept"] = concept
+        args: dict[str, Any] = {
+            "vault": v,
+            "id": case_id,
+            "new_content": content,
+            "reason": concept or "Updated via API",
+        }
         try:
             result = await self._mcp_call("muninn_evolve", args)
             logger.info("Evolved case %s in vault '%s'", case_id, v)
@@ -728,15 +725,10 @@ class MuninnBackend(MemoryBackend):
     async def health_check(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=5.0) as http:
-                resp = await http.get(f"{self.rest_url}/api/health")
+                resp = await http.get(f"{self.base_url}/api/health")
                 return resp.status_code == 200
         except Exception:
             return False
 
     async def close(self) -> None:
-        if self._http is not None:
-            try:
-                await self._http.aclose()
-            except Exception:
-                pass
-            self._http = None
+        pass

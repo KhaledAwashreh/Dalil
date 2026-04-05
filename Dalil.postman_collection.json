@@ -41,7 +41,7 @@
 							"port": "8000",
 							"path": ["health"]
 						},
-						"description": "Check API health, MuninnDB connectivity, and LLM status."
+						"description": "Check API health, MuninnDB connectivity, and LLM status.\n\nResponse fields: status, muninn_connected, llm_provider, llm_model."
 					},
 					"response": []
 				},
@@ -62,7 +62,7 @@
 								}
 							]
 						},
-						"description": "Get statistics and metrics for a vault (case count, entity count, etc)."
+						"description": "Get vault health metrics from MuninnDB.\n\nResponse fields: vault, total_memories, health, enrichment_mode, contradiction_count, contradictions."
 					},
 					"response": []
 				},
@@ -87,7 +87,7 @@
 								}
 							]
 						},
-						"description": "Get recently accessed or created consulting sessions and memories."
+						"description": "Get recent memory activity (writes and activations) from the last 24 hours via muninn_session."
 					},
 					"response": []
 				}
@@ -145,7 +145,7 @@
 					"response": []
 				},
 				{
-					"name": "Provide Feedback",
+					"name": "Provide Feedback (Legacy)",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -164,12 +164,12 @@
 							"port": "8000",
 							"path": ["feedback"]
 						},
-						"description": "Provide feedback on consultation results for relevance model training. Legacy format uses signal + case_ids."
+						"description": "Provide feedback on consultation results. Legacy format uses signal ('useful'/'not_useful') + case_ids."
 					},
 					"response": []
 				},
 				{
-					"name": "Provide Feedback (New Format)",
+					"name": "Provide Feedback (Per-Case)",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -180,7 +180,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"request_id\": \"{{request_id}}\",\n  \"results\": [\n    {\"case_id\": \"case-1\", \"relevant\": true},\n    {\"case_id\": \"case-2\", \"relevant\": false}\n  ]\n}"
+							"raw": "{\n  \"request_id\": \"{{request_id}}\",\n  \"results\": [\n    {\"case_id\": \"case-1\", \"relevant\": true},\n    {\"case_id\": \"case-2\", \"relevant\": false}\n  ],\n  \"comment\": \"First case was exactly what I needed\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/feedback",
@@ -188,7 +188,7 @@
 							"port": "8000",
 							"path": ["feedback"]
 						},
-						"description": "Provide granular per-case feedback. New format with explicit relevance for each case."
+						"description": "Provide granular per-case feedback. Preferred format with explicit relevance for each case. Triggers muninn_feedback for SGD weight tuning and muninn_link for co-relevant cases."
 					},
 					"response": []
 				}
@@ -418,7 +418,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"title\": \"Updated case title\",\n  \"content\": \"Updated content with new insights\",\n  \"tags\": [\"updated\", \"v2\"]\n}"
+							"raw": "{\n  \"case_id\": \"{{case_id}}\",\n  \"content\": \"Updated content with new insights from recent engagement\",\n  \"concept\": \"Reason for the update\",\n  \"vault\": \"{{vault}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/cases/{{case_id}}",
@@ -426,7 +426,7 @@
 							"port": "8000",
 							"path": ["cases", "{{case_id}}"]
 						},
-						"description": "Update/evolve an existing case with new title, content, or tags."
+						"description": "Update/evolve an existing case via muninn_evolve. Archives previous version. Requires content (new_content) and concept (used as reason)."
 					},
 					"response": []
 				},
@@ -442,7 +442,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"state\": \"archived\"\n}"
+							"raw": "{\n  \"case_id\": \"{{case_id}}\",\n  \"state\": \"archived\",\n  \"vault\": \"{{vault}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/cases/{{case_id}}/state",
@@ -450,7 +450,7 @@
 							"port": "8000",
 							"path": ["cases", "{{case_id}}", "state"]
 						},
-						"description": "Set the state of a case (e.g., active, archived, deprecated)."
+						"description": "Set the lifecycle state of a case via muninn_state. Valid states: planning, active, paused, blocked, completed, cancelled, archived, soft_deleted."
 					},
 					"response": []
 				},
@@ -466,7 +466,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"case_ids\": [\"case-1\", \"case-2\", \"case-3\"],\n  \"vault\": \"{{vault}}\",\n  \"title\": \"Consolidated Case\",\n  \"rationale\": \"These cases describe the same pattern with variation\"\n}"
+							"raw": "{\n  \"case_ids\": [\"case-1\", \"case-2\", \"case-3\"],\n  \"concept\": \"Merged: Common pattern across related cases\",\n  \"vault\": \"{{vault}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/cases/consolidate",
@@ -474,7 +474,7 @@
 							"port": "8000",
 							"path": ["cases", "consolidate"]
 						},
-						"description": "Merge multiple related cases into a single consolidated case."
+						"description": "Merge multiple related cases into a single consolidated case via muninn_consolidate. Requires at least 2 case_ids."
 					},
 					"response": []
 				}
@@ -489,7 +489,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/vault/entities?vault={{vault}}&limit=50",
+							"raw": "{{base_url}}/vault/entities?vault={{vault}}",
 							"host": ["localhost"],
 							"port": "8000",
 							"path": ["vault", "entities"],
@@ -497,14 +497,10 @@
 								{
 									"key": "vault",
 									"value": "{{vault}}"
-								},
-								{
-									"key": "limit",
-									"value": "50"
 								}
 							]
 						},
-						"description": "List all entities (people, companies, concepts) in a vault."
+						"description": "List all entities in a vault's entity graph via muninn_entities."
 					},
 					"response": []
 				},
@@ -525,7 +521,7 @@
 								}
 							]
 						},
-						"description": "Get detailed information about a specific entity (mentions, confidence, properties)."
+						"description": "Get details for a specific entity via muninn_entity. Returns 404 if entity not found."
 					},
 					"response": []
 				},
@@ -546,7 +542,7 @@
 								}
 							]
 						},
-						"description": "Get the timeline of an entity's evolution and mentions across cases."
+						"description": "Get temporal history of an entity via muninn_entity_timeline."
 					},
 					"response": []
 				},
@@ -567,7 +563,7 @@
 								}
 							]
 						},
-						"description": "Get all cases that mention a specific entity."
+						"description": "Find all cases/engrams linked to an entity via muninn_find_by_entity."
 					},
 					"response": []
 				}
@@ -588,7 +584,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"start_id\": \"entity-or-case-id\",\n  \"vault\": \"{{vault}}\",\n  \"depth\": 3,\n  \"relationship_types\": [\"mentions\", \"involves\"]\n}"
+							"raw": "{\n  \"start_id\": \"engram-id-here\",\n  \"max_depth\": 3,\n  \"relation_filter\": [\"supports\", \"contradicts\"],\n  \"vault\": \"{{vault}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/traverse",
@@ -596,7 +592,7 @@
 							"port": "8000",
 							"path": ["traverse"]
 						},
-						"description": "Traverse the knowledge graph from a starting entity/case, following relationships up to specified depth."
+						"description": "BFS graph traversal from a starting engram via muninn_traverse. Returns nodes, edges, and total reachable count."
 					},
 					"response": []
 				}

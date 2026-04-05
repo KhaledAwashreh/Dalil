@@ -17,7 +17,7 @@ from dalil.config.settings import Settings, MuninnSettings, LLMSettings
 def test_settings() -> Settings:
     """
     Provide test settings with MuninnDB pointing to Docker Compose instance.
-    
+
     Assumes: docker-compose up -d is already running
     """
     return Settings(
@@ -38,13 +38,13 @@ def test_settings() -> Settings:
 def client(test_settings) -> TestClient:
     """
     Provide a FastAPI TestClient for making requests to endpoints.
-    
+
     Uses the Docker Compose MuninnDB instance.
     """
     # Override settings for test environment
     os.environ["MUNINN_URL"] = "http://127.0.0.1:8475"
     os.environ["MUNINN_TOKEN"] = ""
-    
+
     return TestClient(app)
 
 
@@ -52,9 +52,9 @@ def client(test_settings) -> TestClient:
 def sample_consult_request():
     """Sample request data for /consult endpoint."""
     return {
-        "query": "What are the key legal precedents in recent case law?",
+        "problem": "What are the key legal precedents in recent case law?",
         "context": "Corporate compliance",
-        "prefer_recent": False,
+        "vault": "default",
     }
 
 
@@ -63,10 +63,11 @@ def sample_feedback_request():
     """Sample request data for /feedback endpoint."""
     return {
         "request_id": "req-test-001",
-        "case_id": "case-test-001",
-        "rating": 5,
-        "comment": "This was very helpful",
-        "tags": ["accurate", "relevant"],
+        "results": [
+            {"case_id": "case-test-001", "relevant": True},
+            {"case_id": "case-test-002", "relevant": False},
+        ],
+        "comment": "First case was very helpful",
     }
 
 
@@ -74,9 +75,7 @@ def sample_feedback_request():
 def sample_traverse_request():
     """Sample request data for /traverse endpoint."""
     return {
-        "start_concepts": ["law", "precedent"],
-        "depth": 2,
-        "relation_filter": ["cites", "contradicts"],
-        "max_results": 10,
+        "start_id": "test-engram-id",
+        "max_depth": 2,
+        "vault": "default",
     }
-

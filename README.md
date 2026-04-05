@@ -145,7 +145,7 @@ cp dalil/config/config.example.json config.json
 
 ```bash
 dalil vault create my-project
-curl -X POST http://localhost:8475/ingest/csv \
+curl -X POST http://localhost:8000/ingest/csv/upload \
   -F "file=@data.csv" \
   -F "vault=my-project"
 ```
@@ -153,9 +153,9 @@ curl -X POST http://localhost:8475/ingest/csv \
 ### 5. Query
 
 ```bash
-curl -X POST http://localhost:8475/consult \
+curl -X POST http://localhost:8000/consult \
   -H "Content-Type: application/json" \
-  -d '{"query": "Your question", "vault": "my-project"}'
+  -d '{"problem": "Your question", "vault": "my-project"}'
 ```
 
 See **[SETUP.md](SETUP.md)** for full walkthrough.
@@ -165,42 +165,47 @@ See **[SETUP.md](SETUP.md)** for full walkthrough.
 ## CLI
 
 ```bash
-dalil vault create <client>        # Create a vault
+dalil status                       # Check MuninnDB status
+dalil serve                        # Start the API server
+dalil vault create <name>          # Create a vault (auto-generates API key)
 dalil vault list                   # List vaults
-dalil vault stats --vault <name>   # Vault statistics
-dalil vault key --vault <name>     # Get API key
-dalil vault clone --source <s> --destination <d>  # Clone vault
-dalil vault delete --vault <name>  # Delete vault
+dalil vault key <name>             # Show stored API key
+dalil vault clone <source> <new>   # Clone a vault
+dalil vault clear <name>           # Clear all memories from a vault
+dalil vault delete <name>          # Delete a vault
 ```
 
 ---
 
-## 18 REST API Endpoints
+## REST API Endpoints
 
-**Consultation:**
+**Core:**
+- `GET /health` — System health
 - `POST /consult` — Query & synthesize
-- `POST /feedback` — Log relevance feedback
-
-**Vault Management:**
-- `GET /vault/stats` — Knowledge statistics
-- `GET /vault/health` — Vault health check
-- `GET /vault/recent` — Recently accessed cases
+- `POST /feedback` — Relevance feedback
 
 **Ingestion:**
-- `POST /ingest/csv` — Ingest CSV
-- `POST /ingest/pdf` — Ingest PDF
+- `POST /ingest/csv` — Ingest CSV (server path)
+- `POST /ingest/csv/upload` — Ingest CSV (file upload)
+- `POST /ingest/pdf` — Ingest PDF (server path)
+- `POST /ingest/pdf/upload` — Ingest PDF (file upload)
 - `POST /ingest/confluence` — Ingest Confluence
 
-**Entity Management:**
-- `GET /entities` — List entities
-- `POST /entities/merge` — Merge duplicates
-- `DELETE /entities/{id}` — Delete entity
+**Case Management:**
+- `PUT /cases/{case_id}` — Evolve a case
+- `PATCH /cases/{case_id}/state` — Set case lifecycle state
+- `POST /cases/consolidate` — Merge duplicate cases
 
-**Traversal:**
+**Vault & Graph:**
+- `GET /vault/stats` — Vault statistics and health
+- `GET /session/recent` — Recent memory activity
 - `POST /traverse` — Graph traversal
 
-**Health:**
-- `GET /health` — System health
+**Entity Graph:**
+- `GET /vault/entities` — List entities
+- `GET /vault/entities/{name}` — Entity detail
+- `GET /vault/entities/{name}/timeline` — Entity timeline
+- `GET /vault/entities/{name}/cases` — Entity cases
 
 Full reference: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 

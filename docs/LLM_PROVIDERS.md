@@ -21,32 +21,35 @@ Set in `config.json`:
 
 ```json
 {
-  "llm_provider": "anthropic",
-  "llm_model": "claude-3-5-sonnet-20241022",
-  "llm_temperature": 0.7
+  "llm": {
+    "type": "api",
+    "provider": "anthropic",
+    "model": "claude-3-5-sonnet-20241022",
+    "api_key": "sk-ant-...",
+    "temperature": 0.7
+  }
 }
 ```
 
-Then set the API key in `.env`:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-...
-```
+Or set the API key via environment variable: `LLM_API_KEY=sk-ant-...`
 
 ### Ollama (Local)
 
 If you choose Ollama:
 
-1. Install Ollama: https://ollama.ai
-2. Pull a model: `ollama pull llama2`
+1. Install Ollama: https://ollama.com
+2. Pull a model: `ollama pull mistral`
 3. Start Ollama: `ollama serve` (default: `http://localhost:11434`)
 4. Set in `config.json`:
 
 ```json
 {
-  "llm_provider": "ollama",
-  "llm_model": "llama2",
-  "ollama_base_url": "http://localhost:11434"
+  "llm": {
+    "type": "api",
+    "provider": "ollama",
+    "model": "mistral",
+    "base_url": "http://localhost:11434/v1"
+  }
 }
 ```
 
@@ -72,31 +75,22 @@ Embeddings power semantic search in MuninnDB. Dalil supports multiple providers.
 
 ### Configuration
 
-Set in `config.json`:
+Embeddings are configured in MuninnDB, not in Dalil directly. MuninnDB handles all embedding generation internally.
+
+Dalil's `config.json` has a minimal `embeddings` section for optional local embedding support:
 
 ```json
 {
-  "embedding_provider": "openai",
-  "embedding_model": "text-embedding-3-small"
+  "embeddings": {
+    "enabled": false,
+    "model_name": "all-MiniLM-L6-v2"
+  }
 }
 ```
 
-Then set the API key in `.env`:
+### Local ONNX (MuninnDB Default)
 
-```bash
-OPENAI_API_KEY=sk-proj-...
-```
-
-### Local ONNX (Recommended)
-
-ONNX is the default and recommended for most use cases:
-
-```json
-{
-  "embedding_provider": "onnx",
-  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2"
-}
-```
+MuninnDB uses ONNX by default for embeddings:
 
 **Advantages:**
 - Zero API cost
@@ -133,14 +127,15 @@ To switch providers at runtime:
 1. Edit `config.json`:
    ```json
    {
-     "llm_provider": "anthropic",
-     "embedding_provider": "openai"
+     "llm": {
+       "provider": "anthropic",
+       "model": "claude-3-5-sonnet-20241022",
+       "api_key": "sk-ant-..."
+     }
    }
    ```
 
-2. Set the API key in `.env`
-
-3. Restart Dalil:
+2. Restart Dalil:
    ```bash
    docker compose down
    docker compose up -d

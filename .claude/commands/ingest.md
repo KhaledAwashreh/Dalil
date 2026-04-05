@@ -93,9 +93,10 @@ dalil_url="${DALIL_URL:-http://localhost:8000}"
 curl -sf -X PUT "${dalil_url}/cases/${EVOLVE_CASE_ID}" \
   -H "Content-Type: application/json" \
   -d "{
+    \"case_id\": \"${EVOLVE_CASE_ID}\",
     \"vault\": \"${VAULT}\",
     \"content\": \"$(cat ${FILE_PATH})\",
-    \"tags\": [${TAGS}]
+    \"concept\": \"Updated via ingestion\"
   }"
 ```
 
@@ -107,7 +108,7 @@ If `CONSOLIDATE` flag is present, run deduplication:
 dalil_url="${DALIL_URL:-http://localhost:8000}"
 curl -sf -X POST "${dalil_url}/cases/consolidate" \
   -H "Content-Type: application/json" \
-  -d "{\"vault\": \"${VAULT}\"}"
+  -d "{\"case_ids\": [\"id-1\", \"id-2\"], \"vault\": \"${VAULT}\"}"
 ```
 
 Report any cases that were merged.

@@ -122,14 +122,11 @@ class FeedbackResponse(BaseModel):
 
 class VaultStatsResponse(BaseModel):
     vault: str
-    engram_count: int = 0
-    storage_bytes: int = 0
-    coherence_score: float = 0.0
-    orphan_ratio: float = 0.0
-    duplication_pressure: float = 0.0
+    total_memories: int = 0
+    health: str = "unknown"
+    enrichment_mode: str = "unknown"
     contradiction_count: int = 0
     contradictions: list[dict] = Field(default_factory=list)
-    confidence_distribution: dict = Field(default_factory=dict)
 
 
 # --- Graph Traversal ---

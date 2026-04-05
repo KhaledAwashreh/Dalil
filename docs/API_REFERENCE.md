@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL: `http://localhost:8475` (or `http://dalil:8475` from Docker Compose)
+Base URL: `http://localhost:8000`
 
 All requests/responses use **JSON**.
 
@@ -17,15 +17,18 @@ GET /health
 **Response (200 OK):**
 ```json
 {
-  "status": "healthy",
-  "muninndb": "healthy",
-  "uptime_seconds": 1234.5
+  "status": "ok",
+  "muninn_connected": true,
+  "llm_provider": "APILLM",
+  "llm_model": "deepseek-v3.1:671b-cloud"
 }
 ```
 
+`status` is `"ok"` when MuninnDB is connected, `"degraded"` otherwise.
+
 ### Consultation
 
-Retrieve relevant cases from a vault and optionally synthesize an LLM response.
+Retrieve relevant cases from a vault and synthesize an LLM response.
 
 ```http
 POST /consult
@@ -34,114 +37,145 @@ POST /consult
 **Request Body:**
 ```json
 {
-  "vault": "myproject",
-  "query": "What's the best approach to handling API rate limiting?",
-  "max_results": 5,
-  "synthesize": true
+  "problem": "What's the best approach to handling API rate limiting?",
+  "context": "Mid-size SaaS company with 10k daily active users",
+  "tags": ["architecture", "scaling"],
+  "vault": "default"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `problem` | string | yes | The consulting problem or question |
+| `context` | string | no | Additional context about the client/situation |
+| `tags` | list[str] | no | Focus area tags for filtering |
+| `vault` | string | no | Client vault for isolation (default: `"default"`) |
 
 **Response (200 OK):**
 ```json
 {
-  "query_id": "uuid-here",
-  "query": "...",
-  "vault": "myproject",
-  "retrieved_cases": [
+  "request_id": "uuid-here",
+  "recommendation": "Based on the retrieved cases, here's the recommended approach...",
+  "similar_cases": [
     {
-      "id": "case-1",
+      "id": "01KM3S...",
       "title": "Rate Limiting Strategy",
       "type": "playbook",
+      "industry": "technology",
+      "score": 0.87,
       "content": "...",
-      "confidence": 0.92,
-      "relevance_score": 0.87
+      "summary": "...",
+      "tags": ["architecture"]
     }
   ],
-  "synthesis": "Based on the best practices in your knowledge base, here's the recommended approach: ...",
-  "synthesis_model": "gpt-4o",
-  "total_cases": 5,
-  "search_time_ms": 45,
-  "synthesis_time_ms": 320
+  "sources": [
+    {"type": "muninn", "uri": "engram://01KM3S...", "title": "Rate Limiting Strategy"}
+  ],
+  "tools_used": ["muninn_memory"],
+  "confidence": 0.82,
+  "reasoning_summary": "...",
+  "score_breakdowns": null
 }
 ```
 
-### Feedback (Learning)
+### Feedback
 
-Log positive/negative feedback on a consultation result to improve future retrievals.
+Provide relevance feedback on consultation results to improve future retrievals.
 
 ```http
 POST /feedback
 ```
 
-**Request Body:**
+**Request Body (preferred — per-case signals):**
 ```json
 {
-  "vault": "myproject",
-  "query_id": "uuid-here",
-  "case_ids": ["case-1", "case-3"],
-  "relevance": 0.95,
-  "notes": "Excellent, these were the exact cases I was looking for"
+  "request_id": "uuid-from-consult",
+  "results": [
+    {"case_id": "case-1", "relevant": true},
+    {"case_id": "case-2", "relevant": false}
+  ],
+  "comment": "First case was exactly what I needed"
+}
+```
+
+**Request Body (legacy — bulk signal):**
+```json
+{
+  "request_id": "uuid-from-consult",
+  "signal": "useful",
+  "case_ids": ["case-1", "case-2"]
 }
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "query_id": "uuid-here",
-  "cases_updated": 2,
-  "confidence_boost": "+0.08",
-  "status": "recorded"
+  "request_id": "uuid-here",
+  "cases_affected": 2,
+  "actions_taken": [
+    "sent relevance feedback for 2 cases",
+    "linked 1 pairs of co-relevant cases"
+  ]
 }
 ```
+
+Under the hood, this calls `muninn_feedback` for SGD weight tuning and `muninn_link` to connect co-relevant cases.
 
 ---
 
 ## Ingestion Endpoints
 
-### Ingest CSV
+### Ingest CSV (server path)
 
 ```http
 POST /ingest/csv
 ```
 
-**Form Data:**
-- `vault` (string): Target vault
-- `file` (file): CSV file
-
-**CSV Schema** (columns):
-- `title` (required)
-- `content` (required)
-- `type` (optional, default: "consultation")
-- `tags` (optional, comma-separated)
-- `confidence` (optional, 0–1)
-
-**Response (200 OK):**
+**Request Body:**
 ```json
 {
-  "vault": "myproject",
-  "ingested_rows": 42,
-  "ingestion_id": "uuid-here",
-  "summary": {
-    "extracted_entities": 156,
-    "graph_edges": 89,
-    "total_tokens": 12450
-  }
+  "file_path": "/path/to/cases.csv",
+  "vault": "default",
+  "tags": ["imported"]
 }
 ```
 
-### Ingest PDF
+### Ingest CSV (file upload)
+
+```http
+POST /ingest/csv/upload
+```
+
+**Form Data:**
+- `file` (file): CSV file
+- `vault` (string): Target vault (default: `"default"`)
+- `tags` (string): Comma-separated tags
+
+### Ingest PDF (server path)
 
 ```http
 POST /ingest/pdf
 ```
 
-**Form Data:**
-- `vault` (string): Target vault
-- `file` (file): PDF file
-- `chunk_size` (optional, default: 1024)
-- `chunk_overlap` (optional, default: 128)
+**Request Body:**
+```json
+{
+  "file_path": "/path/to/document.pdf",
+  "vault": "default",
+  "tags": ["imported"]
+}
+```
 
-**Response (200 OK):** Same format as CSV
+### Ingest PDF (file upload)
+
+```http
+POST /ingest/pdf/upload
+```
+
+**Form Data:**
+- `file` (file): PDF file
+- `vault` (string): Target vault
+- `tags` (string): Comma-separated tags
 
 ### Ingest Confluence
 
@@ -149,146 +183,223 @@ POST /ingest/pdf
 POST /ingest/confluence
 ```
 
+**Request Body (by URL):**
+```json
+{
+  "url": "https://yourorg.atlassian.net/wiki/spaces/TEAM/pages/123456/Page+Title",
+  "vault": "default",
+  "tags": ["confluence"]
+}
+```
+
+**Request Body (by page ID):**
+```json
+{
+  "page_id": "123456",
+  "vault": "default"
+}
+```
+
+**Request Body (entire space):**
+```json
+{
+  "space_key": "TEAM",
+  "vault": "default",
+  "limit": 25,
+  "tags": ["confluence", "bulk"]
+}
+```
+
+**Ingestion Response (all formats):**
+```json
+{
+  "request_id": "uuid-here",
+  "source_type": "csv",
+  "cases_created": 42,
+  "vault": "default"
+}
+```
+
+---
+
+## Case Management Endpoints
+
+### Evolve Case
+
+Update a case in place, archiving the previous version.
+
+```http
+PUT /cases/{case_id}
+```
+
 **Request Body:**
 ```json
 {
-  "vault": "myproject",
-  "confluence_base_url": "https://yourcompany.atlassian.net/wiki",
-  "space_key": "ENGINEERING",
-  "page_ancestor_id": "123456",
-  "auth_token": "..."
+  "case_id": "01KM3S...",
+  "content": "Updated content with new insights",
+  "concept": "Reason for the update",
+  "vault": "default"
 }
 ```
 
-**Response (200 OK):** Same format as CSV
+Calls `muninn_evolve` with `new_content` and `reason` parameters.
+
+**Response (200 OK):**
+```json
+{
+  "case_id": "01KM3S...",
+  "vault": "default",
+  "result": {"id": "01KNE6...", "concept": ""}
+}
+```
+
+### Set Case State
+
+Change the lifecycle state of a case.
+
+```http
+PATCH /cases/{case_id}/state
+```
+
+**Request Body:**
+```json
+{
+  "case_id": "01KM3S...",
+  "state": "archived",
+  "vault": "default"
+}
+```
+
+Valid states: `planning`, `active`, `paused`, `blocked`, `completed`, `cancelled`, `archived`, `soft_deleted`.
+
+**Response (200 OK):**
+```json
+{
+  "case_id": "01KM3S...",
+  "state": "archived",
+  "success": true
+}
+```
+
+### Consolidate Cases
+
+Merge multiple cases into one.
+
+```http
+POST /cases/consolidate
+```
+
+**Request Body:**
+```json
+{
+  "case_ids": ["case-1", "case-2", "case-3"],
+  "concept": "Merged: Common pattern",
+  "vault": "default"
+}
+```
+
+Requires at least 2 `case_ids`. Calls `muninn_consolidate`.
+
+**Response (200 OK):**
+```json
+{
+  "vault": "default",
+  "merged_id": "01KNE7...",
+  "result": {"id": "01KNE7..."}
+}
+```
 
 ---
 
-## Vault Management Endpoints
-
-### Vault Statistics
+## Vault Statistics
 
 ```http
-GET /vault/stats?vault=myproject
+GET /vault/stats?vault=default
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "vault": "myproject",
-  "total_cases": 342,
-  "total_entities": 1250,
-  "total_edges": 890,
-  "ingestion_count": 12,
-  "last_ingestion": "2025-01-15T14:23:00Z",
-  "total_tokens": 456000,
-  "storage_size_mb": 23.4
+  "vault": "default",
+  "total_memories": 34830,
+  "health": "good",
+  "enrichment_mode": "inline",
+  "contradiction_count": 0,
+  "contradictions": []
 }
 ```
 
+Fields come from MuninnDB's `muninn_status` and `muninn_contradictions` tools.
 
+---
 
-### Recent Cases
+## Session Continuity
 
 ```http
-GET /vault/recent?vault=myproject&limit=10
+GET /session/recent?vault=default&limit=5
 ```
+
+Returns recent memory activity via `muninn_session`. Defaults to last 24 hours.
 
 **Response (200 OK):**
 ```json
 {
-  "vault": "myproject",
-  "recent_cases": [
+  "vault": "default",
+  "memories": [
     {
-      "id": "case-1",
-      "title": "...",
-      "type": "engagement",
-      "created_at": "2025-01-15T12:30:00Z",
-      "updated_at": "2025-01-15T13:45:00Z"
+      "writes": [
+        {"id": "01KNE6...", "concept": "...", "created_at": "2026-04-05T..."}
+      ],
+      "activations": 0,
+      "since": "2026-04-04T..."
     }
-  ],
-  "total": 10
+  ]
 }
 ```
 
 ---
 
-## Entity Management Endpoints
+## Entity Graph Endpoints
 
 ### List Entities
 
 ```http
-GET /entities?vault=myproject
+GET /vault/entities?vault=default
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "vault": "myproject",
-  "entities": [
-    {
-      "id": "entity-1",
-      "name": "Alice Johnson",
-      "type": "person",
-      "mention_count": 23,
-      "first_seen": "2025-01-10T08:00:00Z",
-      "last_seen": "2025-01-15T14:30:00Z"
-    }
-  ],
-  "total": 156
+  "vault": "default",
+  "entities": []
 }
 ```
 
-### Merge Entities
-
-Merge duplicate entity records.
+### Entity Detail
 
 ```http
-POST /entities/merge
+GET /vault/entities/{entity_name}?vault=default
 ```
 
-**Request Body:**
-```json
-{
-  "vault": "myproject",
-  "source_id": "entity-1",
-  "target_id": "entity-2"
-}
-```
+Returns 200 with entity details or 404 if not found.
 
-**Response (200 OK):**
-```json
-{
-  "merged": true,
-  "source_id": "entity-1",
-  "target_id": "entity-2",
-  "cases_updated": 12,
-  "edges_consolidated": 8
-}
-```
-
-### Delete Entity
+### Entity Timeline
 
 ```http
-DELETE /entities/{entity_id}?vault=myproject
+GET /vault/entities/{entity_name}/timeline?vault=default
 ```
 
-**Response (200 OK):**
-```json
-{
-  "deleted": true,
-  "entity_id": "entity-1",
-  "cases_updated": 5
-}
+### Entity Cases
+
+```http
+GET /vault/entities/{entity_name}/cases?vault=default
 ```
 
 ---
 
-## Traversal Endpoints
+## Graph Traversal
 
-### Graph Traversal
-
-Explore relationships in the knowledge graph.
+BFS traversal from a starting engram.
 
 ```http
 POST /traverse
@@ -297,29 +408,26 @@ POST /traverse
 **Request Body:**
 ```json
 {
-  "vault": "myproject",
-  "start_case_id": "case-1",
+  "start_id": "01KM3S...",
   "max_depth": 3,
-  "relation_types": ["mentions", "contradicts", "related_to"],
-  "limit": 50
+  "relation_filter": ["supports", "contradicts"],
+  "vault": "default"
 }
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "start_case_id": "case-1",
-  "traversal_id": "uuid-here",
-  "paths": [
-    {
-      "path_length": 2,
-      "cases": ["case-1", "case-5", "case-12"],
-      "relations": ["mentions", "related_to"],
-      "total_confidence": 0.87
-    }
-  ],
-  "total_connected_cases": 23,
-  "max_path_length": 3
+  "start_id": "01KM3S...",
+  "vault": "default",
+  "result": {
+    "nodes": [
+      {"id": "01KM3S...", "concept": "...", "hop_dist": 0}
+    ],
+    "edges": null,
+    "total_reachable": 1,
+    "query_ms": 0
+  }
 }
 ```
 
@@ -327,51 +435,18 @@ POST /traverse
 
 ## Error Responses
 
-All endpoints return appropriate HTTP status codes:
-
 | Status | Description |
 |--------|-------------|
 | **200 OK** | Request succeeded |
-| **400 Bad Request** | Invalid input (missing required field, malformed JSON) |
-| **404 Not Found** | Vault or resource not found |
-| **409 Conflict** | Vault already exists or other conflict |
+| **400 Bad Request** | Invalid input (e.g., consolidate with < 2 case_ids) |
+| **404 Not Found** | Entity not found, or request_id expired |
+| **405 Method Not Allowed** | Wrong HTTP method |
+| **422 Unprocessable Entity** | Missing required fields or invalid JSON |
 | **500 Internal Server Error** | Server error (check logs) |
-| **503 Service Unavailable** | MuninnDB is unreachable |
 
 **Error Response Format:**
 ```json
 {
-  "error": "Vault not found",
-  "detail": "Vault 'nonexistent' does not exist",
-  "status_code": 404,
-  "timestamp": "2025-01-15T14:30:00Z"
+  "detail": "At least 2 case_ids required"
 }
 ```
-
----
-
-## CLI Vault Management
-
-Vault creation and management is CLI-only (not via HTTP):
-
-```bash
-# Create vault
-dalil vault create --client myproject
-
-# List vaults
-dalil vault list
-
-# Vault stats
-dalil vault stats --vault myproject
-
-# Generate API key
-dalil vault key --vault myproject
-
-# Clone vault
-dalil vault clone --source production --destination staging
-
-# Delete vault
-dalil vault delete --vault old-project
-```
-
-See [SETUP.md](../SETUP.md) for full CLI reference.

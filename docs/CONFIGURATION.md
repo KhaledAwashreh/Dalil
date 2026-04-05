@@ -2,23 +2,42 @@
 
 ## config.json
 
-Dalil reads `config.json` at startup. See [config.example.json](../config.json/config.example.json) for a complete template.
+Dalil reads `config.json` at startup. See [config.example.json](../dalil/config/config.example.json) for a complete template.
 
 ### Full Schema
 
 ```json
 {
-  "llm_provider": "anthropic",
-  "llm_model": "claude-3-5-sonnet-20241022",
-  "llm_temperature": 0.7,
-  "embedding_provider": "onnx",
-  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-  "muninndb": {
-    "endpoint": "http://muninndb:8475",
-    "mcp_endpoint": "http://muninndb:8750",
-    "max_hops": 3,
-    "health_check_interval_seconds": 10
-  }
+  "muninn": {
+    "base_url": "http://localhost:8475",
+    "mcp_url": "http://localhost:8750/mcp",
+    "token": "",
+    "default_vault": "default",
+    "timeout": 10.0
+  },
+  "llm": {
+    "type": "api",
+    "provider": "ollama",
+    "model": "mistral",
+    "api_key": "",
+    "base_url": "http://localhost:11434/v1",
+    "temperature": 0.3,
+    "max_tokens": 2048
+  },
+  "ingestion": {
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "confluence_base_url": "",
+    "confluence_token": "",
+    "confluence_email": ""
+  },
+  "embeddings": {
+    "enabled": false,
+    "model_name": "all-MiniLM-L6-v2"
+  },
+  "log_level": "INFO",
+  "api_host": "0.0.0.0",
+  "api_port": 8000
 }
 ```
 
@@ -26,57 +45,82 @@ Dalil reads `config.json` at startup. See [config.example.json](../config.json/c
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `llm_provider` | string | `openai` | LLM provider: `openai`, `anthropic`, `ollama`, `deepseek`, etc. |
-| `llm_model` | string | `gpt-4o` | Model identifier (e.g., `claude-3-5-sonnet-20241022`). |
-| `llm_temperature` | float | `0.7` | Sampling temperature (0.0–1.0). Lower = more deterministic. |
-| `embedding_provider` | string | `onnx` | Embedding provider: `onnx` (local), `openai`, `jina`, `cohere`, `google`, etc. |
-| `embedding_model` | string | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model name. |
-| `muninndb.endpoint` | string | `http://localhost:8475` | MuninnDB REST endpoint. Docker: `http://muninndb:8475`. |
-| `muninndb.mcp_endpoint` | string | `http://localhost:8750` | MuninnDB MCP endpoint. Docker: `http://muninndb:8750`. |
-| `muninndb.max_hops` | int | `3` | Maximum graph traversal hops for ACTIVATE pipeline. |
-| `muninndb.health_check_interval_seconds` | int | `10` | How often to check MuninnDB health. |
+| `muninn.base_url` | string | `http://localhost:8475` | MuninnDB REST endpoint. Docker: `http://muninndb:8475`. |
+| `muninn.mcp_url` | string | `http://localhost:8750/mcp` | MuninnDB MCP endpoint. Docker: `http://muninndb:8750/mcp`. |
+| `muninn.token` | string | `""` | Vault API key (`mk_...` format). Leave empty for local dev with default vault. |
+| `muninn.default_vault` | string | `"default"` | Default vault name for requests that don't specify one. |
+| `muninn.timeout` | float | `10.0` | Request timeout in seconds. |
+| `llm.type` | string | `"api"` | `"api"` for remote/Ollama, `"local"` for HuggingFace transformers. |
+| `llm.provider` | string | `"ollama"` | Provider hint: `"ollama"`, `"openai"`, `"anthropic"`, `"deepseek"`, or any string. |
+| `llm.model` | string | `"mistral"` | Model identifier. |
+| `llm.api_key` | string | `""` | API key (not needed for Ollama). |
+| `llm.base_url` | string | `""` | API base URL. Auto-detected from provider if empty. |
+| `llm.temperature` | float | `0.3` | Sampling temperature (0.0–1.0). Lower = more deterministic. |
+| `llm.max_tokens` | int | `2048` | Max output tokens. |
+| `ingestion.chunk_size` | int | `1000` | Max characters per chunk for PDF/Confluence. |
+| `ingestion.chunk_overlap` | int | `200` | Overlap between chunks. |
+| `ingestion.confluence_base_url` | string | `""` | Confluence instance URL. |
+| `ingestion.confluence_token` | string | `""` | Confluence API token. |
+| `ingestion.confluence_email` | string | `""` | Confluence account email. |
+| `embeddings.enabled` | bool | `false` | Enable local embeddings (MuninnDB handles embeddings by default). |
+| `embeddings.model_name` | string | `"all-MiniLM-L6-v2"` | Local embedding model name. |
+| `log_level` | string | `"INFO"` | Python log level. |
+| `api_host` | string | `"0.0.0.0"` | API server bind address. |
+| `api_port` | int | `8000` | API server port. |
 
 ## Environment Variables
 
-Create a `.env` file in the project root:
+Environment variables override config file values. Create a `.env` file in the project root:
 
 ```bash
-OPENAI_API_KEY=sk-proj-...
-ANTHROPIC_API_KEY=sk-ant-...
-DEEPSEEK_API_KEY=sk-...
-COHERE_API_KEY=...
-GOOGLE_API_KEY=...
-JINA_API_KEY=...
-VOYAGE_API_KEY=...
+# LLM provider keys (set only the one you use)
+LLM_API_KEY=sk-...
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=mistral
+
+# MuninnDB overrides
+MUNINN_URL=http://localhost:8475
+MUNINN_MCP_URL=http://localhost:8750/mcp
+MUNINN_TOKEN=mk_...
+
+# Embedding provider
+EMBED_PROVIDER=openai
+EMBED_API_KEY=sk-...
+
+# Config file path
+DALIL_CONFIG=config.json
 ```
 
-The application loads `.env` automatically. Only set the keys for providers you use.
+Only set the variables you need. See [SETUP.md](../SETUP.md) for the full override table.
 
 ## Vault Management
 
-Vaults are isolated knowledge bases per client. The CLI automatically creates and manages them:
+Vaults are isolated knowledge bases per client. The CLI manages them via `dalil vault`:
 
 ```bash
-# Create a new vault for a client
-dalil vault create --client client-alpha
+# Create a new vault (auto-generates an API key)
+dalil vault create client-alpha
+
+# Create a public vault (no auth required)
+dalil vault create shared-kb --public
 
 # List all vaults
 dalil vault list
 
-# Get vault information
-dalil vault stats --vault myproject
+# Clone a vault
+dalil vault clone production staging
 
-# Clone an existing vault (backups, templates)
-dalil vault clone --source production --destination staging
+# Show stored API key for a vault
+dalil vault key client-alpha
 
-# Generate an API key for a client
-dalil vault key --vault myproject
+# Clear all memories from a vault (keeps the vault)
+dalil vault clear client-alpha
 
-# Delete a vault (irreversible)
-dalil vault delete --vault old-project
+# Delete a vault and all its memories (irreversible)
+dalil vault delete old-project
 ```
 
-All vault data is stored in `.dalil/vaults.json` (Git-ignored, local only).
+API keys are stored in `.dalil/vaults.json` (Git-ignored, local only).
 
 ## Docker Environment
 

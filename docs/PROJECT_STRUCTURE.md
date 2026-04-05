@@ -134,8 +134,8 @@ README.md              # Project overview (condensed)
 - Structured + unstructured fields for flexibility
 
 **backend.py**
-- Vault storage layer (currently MongoDB connection wrapper, can be extended)
-- Tracks vault metadata, API keys, access logs
+- Vault storage abstraction layer
+- Tracks vault metadata and access
 
 ### Ingestion Layer (`dalil/ingestion/`)
 
@@ -175,17 +175,33 @@ Required at startup. Schema:
 
 ```json
 {
-  "llm_provider": "anthropic",
-  "llm_model": "claude-3-5-sonnet-20241022",
-  "llm_temperature": 0.7,
-  "embedding_provider": "onnx",
-  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-  "muninndb": {
-    "endpoint": "http://muninndb:8475",
-    "mcp_endpoint": "http://muninndb:8750",
-    "max_hops": 3,
-    "health_check_interval_seconds": 10
-  }
+  "muninn": {
+    "base_url": "http://localhost:8475",
+    "mcp_url": "http://localhost:8750/mcp",
+    "token": "",
+    "default_vault": "default",
+    "timeout": 10.0
+  },
+  "llm": {
+    "type": "api",
+    "provider": "ollama",
+    "model": "mistral",
+    "api_key": "",
+    "base_url": "http://localhost:11434/v1",
+    "temperature": 0.3,
+    "max_tokens": 2048
+  },
+  "ingestion": {
+    "chunk_size": 1000,
+    "chunk_overlap": 200
+  },
+  "embeddings": {
+    "enabled": false,
+    "model_name": "all-MiniLM-L6-v2"
+  },
+  "log_level": "INFO",
+  "api_host": "0.0.0.0",
+  "api_port": 8000
 }
 ```
 
@@ -206,8 +222,8 @@ Automatically loaded by `dalil/config/settings.py`.
 ### `docker-compose.yml`
 
 Defines MuninnDB + Dalil API services.
-- MuninnDB: port 8475 (REST), 8750 (MCP), 8477 (gRPC), 8474 (binary)
-- Dalil API: port 8475 (same port in container as MuninnDB, different host on Docker network)
+- MuninnDB: port 8475 (REST), 8476 (Web UI), 8477 (gRPC), 8750 (MCP)
+- Dalil API: port 8000
 
 ---
 
@@ -217,7 +233,7 @@ Defines MuninnDB + Dalil API services.
 
 ```bash
 python -m dalil --help
-python -m dalil vault create --client myproject
+python -m dalil vault create myproject
 python -m dalil vault list
 ```
 
@@ -226,7 +242,7 @@ See `dalil/cli.py` for commands.
 ### API Server
 
 ```bash
-python -m dalil api  # Starts FastAPI on 0.0.0.0:8475
+python -m dalil serve  # Starts FastAPI on 0.0.0.0:8000
 ```
 
 Or via Docker:
@@ -265,7 +281,7 @@ See `pyproject.toml` for the full list. Key dependencies:
 - **python-dotenv**: Environment variable loader
 - **requests**: HTTP library
 - **pypdf**: PDF parsing
-- **pymongo**: MongoDB (for vault backend)
+- **python-multipart**: File upload handling
 - **ollama**: Local LLM client
 - Additional provider SDKs (openai, anthropic, etc.)
 
@@ -274,11 +290,11 @@ See `pyproject.toml` for the full list. Key dependencies:
 ## Development Workflow
 
 1. **Install**: `poetry install` or `pip install -r requirements.txt`
-2. **Configure**: Copy `config.json/config.example.json` to `config.json`, edit for your environment
+2. **Configure**: Copy `dalil/config/config.example.json` to `config.json`, edit for your environment
 3. **Set environment variables**: Create `.env` with API keys
 4. **Run tests**: `pytest dalil/tests/`
 5. **Start MuninnDB**: `docker compose up muninndb` or use hosted instance
-6. **Run Dalil**: `python -m dalil api` or `python -m dalil vault create --client test`
+6. **Run Dalil**: `python -m dalil serve` or `python -m dalil vault create test`
 7. **Test endpoints**: Use Postman collection (`Dalil.postman_collection.json`) or curl
 
 ---

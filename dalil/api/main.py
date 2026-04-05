@@ -414,14 +414,11 @@ async def vault_stats(vault: str = "default"):
 
         return VaultStatsResponse(
             vault=vault,
-            engram_count=stats.get("engram_count", 0),
-            storage_bytes=stats.get("storage_bytes", 0),
-            coherence_score=stats.get("coherence_score", 0.0),
-            orphan_ratio=stats.get("orphan_ratio", 0.0),
-            duplication_pressure=stats.get("duplication_pressure", 0.0),
+            total_memories=stats.get("total_memories", 0),
+            health=stats.get("health", "unknown"),
+            enrichment_mode=stats.get("enrichment_mode", "unknown"),
             contradiction_count=stats.get("contradiction_count", len(contradictions)),
             contradictions=contradictions,
-            confidence_distribution=stats.get("confidence_distribution", {}),
         )
     except Exception as e:
         logger.exception("Failed to get vault stats")

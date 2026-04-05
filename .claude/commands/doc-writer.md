@@ -72,11 +72,11 @@ Use the entity graph to ensure comprehensive topic coverage:
 
 ```bash
 dalil_url="${DALIL_URL:-http://localhost:8000}"
-curl -sf "${dalil_url}/vault/entities?vault=${VAULT}&entity=${TOPIC_ENTITY}"
+curl -sf "${dalil_url}/vault/entities/${TOPIC_ENTITY}?vault=${VAULT}"
 ```
 
 Use entity relationships to identify sections or angles that the initial context gathering may have missed.
-Use `/traverse` (muninn_traverse) for relationship mapping between key concepts.
+Use `/traverse` with `start_id` and `max_depth` for relationship mapping between key concepts.
 
 ### Phase 3 — Write Document
 

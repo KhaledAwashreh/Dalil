@@ -100,13 +100,13 @@ For high-relevance cases from previous phases, use `/traverse` to explore connec
 dalil_url="${DALIL_URL:-http://localhost:8000}"
 curl -sf -X POST "${dalil_url}/traverse" \
   -H "Content-Type: application/json" \
-  -d "{\"case_id\": \"${CASE_ID}\", \"vault\": \"${VAULT}\", \"depth\": 2}"
+  -d "{\"start_id\": \"${CASE_ID}\", \"vault\": \"${VAULT}\", \"max_depth\": 2}"
 ```
 
 Also check the entity graph for entity-centric exploration:
 
 ```bash
-curl -sf "${dalil_url}/vault/entities?vault=${VAULT}&entity=${ENTITY_NAME}"
+curl -sf "${dalil_url}/vault/entities/${ENTITY_NAME}?vault=${VAULT}"
 ```
 
 This surfaces related cases that keyword search might miss.

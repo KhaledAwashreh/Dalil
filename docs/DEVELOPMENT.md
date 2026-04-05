@@ -15,9 +15,9 @@
 - **Workaround:** Create vaults ahead of time using the CLI, then manage them via API
 
 ```bash
-dalil vault create --client production
+dalil vault create production
 dalil vault list
-dalil vault key --vault production  # Get API key for client
+dalil vault key production
 ```
 
 ### 3. No Audit Logging
@@ -185,7 +185,7 @@ pytest dalil/tests/ -v
 ### Integration Tests (Manual)
 
 Use Postman collection `Dalil.postman_collection.json` to test full workflows:
-1. Create a vault: `dalil vault create --client test-integration`
+1. Create a vault: `dalil vault create test-integration`
 2. Ingest CSV: `POST /ingest/csv`
 3. Consult: `POST /consult`
 4. Verify response contains retrieved cases
@@ -197,9 +197,9 @@ Use Postman collection `Dalil.postman_collection.json` to test full workflows:
 docker compose up -d
 
 # Create vault
-docker compose exec dalil python -m dalil vault create --client e2e-test
+docker compose exec dalil python -m dalil vault create e2e-test
 
-# Run Postman collection against http://localhost:8475/api
+# Run Postman collection against http://localhost:8000
 
 # Inspect logs
 docker compose logs dalil
@@ -226,7 +226,7 @@ Basic metrics tracked in `dalil/analytics/metrics.py`:
 ### Health Checks
 
 - **`GET /health`:** Dalil + MuninnDB health
-- **`GET /vault/health?vault=X`:** Vault-specific health
+- **`GET /vault/stats?vault=X`:** Vault statistics and health
 
 ---
 
@@ -270,16 +270,14 @@ docker compose logs muninndb
 
 ### Slow Consultations
 
-Check MuninnDB stats:
+Check vault stats via Dalil:
 ```bash
-curl http://localhost:8475/api/vault/stats?vault=myproject
+curl http://localhost:8000/vault/stats?vault=myproject
 ```
 
-If `index_fragmentation_pct` is high, trigger consolidation:
+Or check MuninnDB directly:
 ```bash
-curl -X POST http://localhost:8750 \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"muninn_consolidate","vault":"myproject"}'
+curl http://localhost:8475/api/health
 ```
 
 ### LLM Provider Errors

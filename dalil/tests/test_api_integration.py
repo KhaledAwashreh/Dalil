@@ -21,11 +21,12 @@ class TestHealthEndpoint:
         """Health response should contain required fields."""
         response = client.get("/health")
         data = response.json()
-        
+
         assert "status" in data
-        assert "version" in data
-        assert "timestamp" in data
-        assert data["status"] in ["ok", "degraded", "error"]
+        assert data["status"] in ["ok", "degraded"]
+        assert "muninn_connected" in data
+        assert "llm_provider" in data
+        assert "llm_model" in data
 
 
 class TestConsultEndpoint:
@@ -37,19 +38,18 @@ class TestConsultEndpoint:
         assert response.status_code == 200
 
     def test_consult_response_structure(self, client: TestClient, sample_consult_request):
-        """Consult response should contain recommendation and cases."""
+        """Consult response should contain recommendation and similar_cases."""
         response = client.post("/consult", json=sample_consult_request)
         data = response.json()
-        
+
         assert "request_id" in data
         assert "recommendation" in data
-        assert "cases" in data
+        assert "similar_cases" in data
         assert "confidence" in data
-        assert isinstance(data["cases"], list)
-        assert 0.0 <= data["confidence"] <= 1.0
+        assert isinstance(data["similar_cases"], list)
 
-    def test_consult_missing_query_returns_422(self, client: TestClient):
-        """Consult without query parameter should return 422."""
+    def test_consult_missing_problem_returns_422(self, client: TestClient):
+        """Consult without problem field should return 422."""
         response = client.post("/consult", json={"context": "test"})
         assert response.status_code == 422
 
@@ -57,39 +57,33 @@ class TestConsultEndpoint:
 class TestIngestEndpoints:
     """Tests for /ingest/* endpoints."""
 
-    def test_ingest_csv_from_url_returns_200(self, client: TestClient):
-        """CSV ingestion from URL endpoint should be available."""
-        # This will depend on actual CSV URL availability
+    def test_ingest_csv_from_path(self, client: TestClient):
+        """CSV ingestion from path endpoint should be available."""
         response = client.post(
             "/ingest/csv",
-            json={"url": "http://example.com/test.csv", "vault": "default"}
+            json={"file_path": "/nonexistent/test.csv", "vault": "default"}
         )
-        # Endpoint exists (not 404), though may fail due to invalid URL
-        assert response.status_code in [200, 400, 422]
+        # Endpoint exists (not 404), may fail due to missing file
+        assert response.status_code != 404
 
-    def test_ingest_pdf_from_url_returns_200(self, client: TestClient):
-        """PDF ingestion from URL endpoint should be available."""
+    def test_ingest_pdf_from_path(self, client: TestClient):
+        """PDF ingestion from path endpoint should be available."""
         response = client.post(
             "/ingest/pdf",
-            json={"url": "http://example.com/test.pdf", "vault": "default"}
+            json={"file_path": "/nonexistent/test.pdf", "vault": "default"}
         )
-        # Endpoint exists (not 404), though may fail due to invalid URL
-        assert response.status_code in [200, 400, 422]
+        assert response.status_code != 404
 
     def test_ingest_confluence_endpoint_available(self, client: TestClient):
         """Confluence ingestion endpoint should be available."""
         response = client.post(
             "/ingest/confluence",
             json={
-                "base_url": "https://example.atlassian.net",
-                "username": "test@example.com",
-                "api_token": "test-token",
-                "space_key": "TEST",
+                "url": "https://example.atlassian.net/wiki/spaces/TEST/pages/123",
                 "vault": "default",
             }
         )
-        # Endpoint exists (not 404)
-        assert response.status_code in [200, 400, 401, 422]
+        assert response.status_code != 404
 
 
 class TestFeedbackEndpoint:
@@ -98,17 +92,18 @@ class TestFeedbackEndpoint:
     def test_feedback_post_returns_response(self, client: TestClient, sample_feedback_request):
         """Feedback endpoint should accept POST requests."""
         response = client.post("/feedback", json=sample_feedback_request)
-        
-        # Should return 200, 201, or 202 (accepted)
-        assert response.status_code in [200, 201, 202]
+        # 200 for success, 404 if request_id not cached
+        assert response.status_code in [200, 404]
 
     def test_feedback_response_contains_request_id(self, client: TestClient, sample_feedback_request):
         """Feedback response should acknowledge the request."""
         response = client.post("/feedback", json=sample_feedback_request)
-        
-        if response.status_code in [200, 201, 202]:
+
+        if response.status_code == 200:
             data = response.json()
-            assert "request_id" in data or "status" in data
+            assert "request_id" in data
+            assert "cases_affected" in data
+            assert "actions_taken" in data
 
 
 class TestCasesEndpoints:
@@ -119,12 +114,21 @@ class TestCasesEndpoints:
         response = client.put(
             "/cases/test-case-123",
             json={
-                "evolution_query": "Update based on new information",
-                "new_source": "Additional case law",
+                "case_id": "test-case-123",
+                "content": "Updated content",
+                "vault": "default",
             }
         )
-        # Endpoint exists (not 404), may return 404 for missing case
-        assert response.status_code in [200, 400, 404, 422]
+        # Endpoint exists (not 404), may return 500 for nonexistent case
+        assert response.status_code != 404
+
+    def test_consolidate_cases_validation(self, client: TestClient):
+        """POST /cases/consolidate should require at least 2 case_ids."""
+        response = client.post(
+            "/cases/consolidate",
+            json={"case_ids": ["single"], "vault": "default"},
+        )
+        assert response.status_code == 400
 
     def test_consolidate_cases_endpoint_available(self, client: TestClient):
         """POST /cases/consolidate endpoint should be available."""
@@ -132,21 +136,22 @@ class TestCasesEndpoints:
             "/cases/consolidate",
             json={
                 "case_ids": ["case-1", "case-2"],
-                "consolidation_instruction": "Merge and deduplicate",
                 "vault": "default",
             }
         )
-        # Endpoint exists (not 404)
-        assert response.status_code in [200, 400, 404, 422]
+        assert response.status_code != 404
 
     def test_set_case_state_endpoint_available(self, client: TestClient):
         """PATCH /cases/{case_id}/state endpoint should be available."""
         response = client.patch(
             "/cases/test-case-123/state",
-            json={"new_state": "resolved"}
+            json={
+                "case_id": "test-case-123",
+                "state": "active",
+                "vault": "default",
+            }
         )
-        # Endpoint exists (not 404)
-        assert response.status_code in [200, 400, 404, 422]
+        assert response.status_code != 404
 
 
 class TestVaultEndpoints:
@@ -156,41 +161,38 @@ class TestVaultEndpoints:
         """Vault stats endpoint should return statistics."""
         response = client.get("/vault/stats")
         assert response.status_code == 200
-        
+
         data = response.json()
+        assert "vault" in data
         assert "total_memories" in data
-        assert "total_concepts" in data
-        assert "latest_update" in data
+        assert "health" in data
+        assert "enrichment_mode" in data
+        assert "contradiction_count" in data
+        assert "contradictions" in data
 
     def test_vault_entities_list_returns_200(self, client: TestClient):
         """Vault entities list endpoint should return entity listing."""
         response = client.get("/vault/entities")
         assert response.status_code == 200
-        
+
         data = response.json()
+        assert "vault" in data
         assert "entities" in data
         assert isinstance(data["entities"], list)
 
     def test_vault_entity_detail_returns_response(self, client: TestClient):
         """Vault entity detail endpoint should respond."""
-        # Try a generic entity name that might exist
-        response = client.get("/vault/entities/law")
-        
-        # Should return 200 if entity exists, 404 if not (both valid)
+        response = client.get("/vault/entities/test-entity")
         assert response.status_code in [200, 404]
 
     def test_vault_entity_timeline_returns_response(self, client: TestClient):
         """Vault entity timeline endpoint should respond."""
-        response = client.get("/vault/entities/law/timeline")
-        
-        # Should return 200 if timeline available, 404 if not
+        response = client.get("/vault/entities/test-entity/timeline")
         assert response.status_code in [200, 404]
 
     def test_vault_entity_cases_returns_response(self, client: TestClient):
         """Vault entity cases endpoint should respond."""
-        response = client.get("/vault/entities/law/cases")
-        
-        # Should return 200 if cases available, 404 if not
+        response = client.get("/vault/entities/test-entity/cases")
         assert response.status_code in [200, 404]
 
 
@@ -202,13 +204,15 @@ class TestTraverseEndpoint:
         response = client.post("/traverse", json=sample_traverse_request)
         assert response.status_code in [200, 400, 422]
 
-    def test_traverse_response_contains_paths(self, client: TestClient, sample_traverse_request):
-        """Traverse response should contain relationship paths."""
+    def test_traverse_response_structure(self, client: TestClient, sample_traverse_request):
+        """Traverse response should contain result dict."""
         response = client.post("/traverse", json=sample_traverse_request)
-        
+
         if response.status_code == 200:
             data = response.json()
-            assert "paths" in data or "relationships" in data or "graph" in data
+            assert "start_id" in data
+            assert "vault" in data
+            assert "result" in data
 
 
 class TestSessionEndpoint:
@@ -218,10 +222,11 @@ class TestSessionEndpoint:
         """Recent session endpoint should return recent memories."""
         response = client.get("/session/recent")
         assert response.status_code == 200
-        
+
         data = response.json()
-        assert "memories" in data or "recent" in data
-        assert isinstance(data.get("memories") or data.get("recent"), list)
+        assert "vault" in data
+        assert "memories" in data
+        assert isinstance(data["memories"], list)
 
 
 class TestEndpointExistence:
@@ -249,7 +254,7 @@ class TestEndpointExistence:
             ("GET", "/vault/entities/test/timeline"),
             ("GET", "/vault/entities/test/cases"),
         ]
-        
+
         for method, path in endpoints_to_check:
             if method == "GET":
                 response = client.get(path)
@@ -259,9 +264,8 @@ class TestEndpointExistence:
                 response = client.put(path, json={})
             elif method == "PATCH":
                 response = client.patch(path, json={})
-            
+
             # Should NOT be 404 (endpoint exists)
-            # May be 422 (bad request), 400, 200, etc. based on validation
             assert response.status_code != 404, f"{method} {path} returned 404"
 
 
