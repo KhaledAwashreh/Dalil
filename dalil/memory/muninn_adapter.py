@@ -60,6 +60,8 @@ def _extract_ids(result: Any) -> list[str]:
             if line:
                 ids.append(line)
     return ids
+
+
 _VAULTS_PATHS = [
     Path(".dalil") / "vaults.json",       # local dev (CWD)
     Path("/app/.dalil") / "vaults.json",  # Docker container mount
