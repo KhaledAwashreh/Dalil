@@ -95,7 +95,7 @@ class ConsultingCase(BaseModel):
         return structured
 
     def to_engram_content(self) -> str:
-        """Serialize case data into engram content string."""
+        """Serialize case data into engram content string (text + JSON metadata)."""
         case_body: dict[str, Any] = {
             "case_id": self.id,
             "type": self.type.value,
