@@ -8,6 +8,7 @@ entry, etc.) that gets persisted into MuninnDB as an Engram.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -95,8 +96,6 @@ class ConsultingCase(BaseModel):
 
     def to_engram_content(self) -> str:
         """Serialize case data into engram content string."""
-        import json
-
         case_body: dict[str, Any] = {
             "case_id": self.id,
             "type": self.type.value,
@@ -182,8 +181,6 @@ class ConsultingCase(BaseModel):
     @staticmethod
     def from_engram(engram: dict[str, Any]) -> ConsultingCase:
         """Reconstruct a ConsultingCase from a MuninnDB engram response."""
-        import json
-
         content = engram.get("content", "")
         case_body: dict[str, Any] = {}
 
