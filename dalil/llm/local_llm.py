@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from dalil.llm.api_llm import SYSTEM_PROMPT
 from dalil.llm.interface import LLMInterface
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class LocalLLM(LLMInterface):
         temperature = kwargs.get("temperature", self.temperature)
 
         messages = [
-            {"role": "system", "content": "You are a senior management consultant. Provide well-structured, evidence-grounded consulting advice."},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
 
