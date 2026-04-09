@@ -59,7 +59,7 @@ def build_consult_prompt(
     # Structured data context
     if structured_data:
         data_lines: list[str] = []
-        for item in structured_data[:20]:
+        for item in structured_data[:20]:  # cap to avoid prompt overflow
             line = " | ".join(f"{k}: {v}" for k, v in item.items())
             data_lines.append(f"- {line}")
         sections.append("## Relevant Metrics & Data\n" + "\n".join(data_lines))
