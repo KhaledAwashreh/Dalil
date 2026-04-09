@@ -24,7 +24,11 @@ def load_pdf(
     default_tags: list[str] | None = None,
     source_uri: str = "",
 ) -> list[ConsultingCase]:
-    """Extract text from a PDF and return chunked ConsultingCase objects."""
+    """Extract text from a PDF and return chunked ConsultingCase objects.
+
+    Raises:
+        ImportError: If pypdf is not installed.
+    """
     try:
         from pypdf import PdfReader
     except ImportError:
