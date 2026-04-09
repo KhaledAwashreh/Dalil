@@ -123,7 +123,7 @@ def load_settings(config_path: str | None = None) -> Settings:
 
 # ── Provider mappings ──────────────────────────────────────────────
 
-# MuninnDB env var name for each embedding provider
+# Map provider names to their MuninnDB environment variable names
 EMBED_PROVIDER_ENV_MAP: dict[str, str] = {
     "openai": "MUNINN_OPENAI_KEY",
     "jina": "MUNINN_JINA_KEY",
