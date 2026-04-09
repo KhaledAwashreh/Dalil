@@ -147,7 +147,7 @@ LLM_PROVIDER_BASE_URLS: dict[str, str] = {
 
 
 def resolve_muninn_embed_env(settings: Settings) -> dict[str, str]:
-    """Return the MuninnDB env var dict for the configured embedding provider.
+    """Return the MuninnDB environment variable dict for the configured embedding provider.
 
     Example: provider="openai", api_key="sk-..." -> {"MUNINN_OPENAI_KEY": "sk-..."}
     """
