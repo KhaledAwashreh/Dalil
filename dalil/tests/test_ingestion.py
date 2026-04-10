@@ -57,3 +57,14 @@ def test_csv_loader_preserves_source_fields():
     assert cases[0].industry == "banking"
     # No heuristic entities should be injected
     assert cases[0].entities == []
+
+
+def test_csv_loader_default_tags():
+    """Default tags are merged with row-level tags."""
+    csv_content = io.StringIO(
+        "title,content,tags\n"
+        "Case,Some content,fintech\n"
+    )
+    cases = load_csv(csv_content, default_tags=["imported"])
+    assert "imported" in cases[0].tags
+    assert "fintech" in cases[0].tags
