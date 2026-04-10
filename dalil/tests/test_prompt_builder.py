@@ -39,3 +39,20 @@ def test_prompt_with_structured_data():
     )
     assert "Relevant Metrics" in prompt
     assert "15%" in prompt
+
+
+def test_prompt_with_tags():
+    prompt = build_consult_prompt(
+        problem="Revenue growth?",
+        tags=["saas", "revenue"],
+    )
+    assert "Focus Areas" in prompt
+    assert "saas" in prompt
+
+
+def test_prompt_without_optional_sections():
+    prompt = build_consult_prompt(problem="Simple question")
+    assert "Similar Past Cases" not in prompt
+    assert "Relevant Metrics" not in prompt
+    assert "Focus Areas" not in prompt
+    assert "Additional Context" not in prompt
