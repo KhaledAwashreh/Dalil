@@ -77,3 +77,16 @@ def test_chunk_text_single_char_boundary():
     assert len(chunks) >= 4
     # All original content should be recoverable
     assert all(len(c) <= 500 for c in chunks)
+
+
+def test_normalize_text_empty():
+    """Empty and whitespace-only strings normalize to empty."""
+    assert normalize_text("") == ""
+    assert normalize_text("   ") == ""
+    assert normalize_text("\n\n\n") == ""
+
+
+def test_normalize_tags_empty():
+    """Empty and whitespace-only tags are filtered out."""
+    assert normalize_tags([]) == []
+    assert normalize_tags(["", "  ", "\t"]) == []
