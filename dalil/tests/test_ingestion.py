@@ -68,3 +68,12 @@ def test_csv_loader_default_tags():
     cases = load_csv(csv_content, default_tags=["imported"])
     assert "imported" in cases[0].tags
     assert "fintech" in cases[0].tags
+
+
+def test_chunk_text_single_char_boundary():
+    """Chunk text that has no paragraph or sentence boundaries."""
+    text = "x" * 2000
+    chunks = chunk_text(text, chunk_size=500, chunk_overlap=50)
+    assert len(chunks) >= 4
+    # All original content should be recoverable
+    assert all(len(c) <= 500 for c in chunks)
