@@ -189,6 +189,25 @@ def test_from_engram_populates_confidence_from_muninndb():
     assert case2.confidence == 0.3
 
 
+def test_get_structured_tags():
+    """get_structured_tags() includes categorical filters."""
+    case = ConsultingCase(
+        title="Tag Test",
+        content="c",
+        type=CaseType.ENGAGEMENT,
+        industry="fintech",
+        source_type=SourceType.CSV,
+        client_name="Acme",
+        tags=["churn"],
+    )
+    tags = case.get_structured_tags()
+    assert "churn" in tags
+    assert "type:engagement" in tags
+    assert "industry:fintech" in tags
+    assert "source:csv" in tags
+    assert "client:Acme" in tags
+
+
 def test_from_engram_default_confidence():
     """from_engram() defaults confidence to 0.8 when not present."""
     engram = {
