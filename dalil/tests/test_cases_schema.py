@@ -111,8 +111,6 @@ def test_to_engram_content_includes_entities_and_relationships():
     assert "abc-123" in content
 
     # Parse the JSON section to verify structure
-    import json
-
     parts = content.split("\n\n---\n", 1)
     assert len(parts) == 2
     body = json.loads(parts[1])
@@ -124,8 +122,6 @@ def test_to_engram_content_includes_entities_and_relationships():
 
 def test_to_engram_content_omits_entities_when_empty():
     """to_engram_content() omits entities/relationships keys when empty."""
-    import json
-
     case = ConsultingCase(title="No Entities", content="Plain content.")
     content = case.to_engram_content()
     parts = content.split("\n\n---\n", 1)
