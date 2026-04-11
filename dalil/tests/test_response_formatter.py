@@ -132,3 +132,35 @@ def test_tools_used_defaults_empty():
         recommendation="",
     )
     assert result["tools_used"] == []
+
+
+def test_empty_recommendation_reasoning():
+    """Empty recommendation produces empty reasoning_summary."""
+    result = format_response(
+        request_id="req-9",
+        recommendation="",
+        cases=[],
+    )
+    assert result["reasoning_summary"] == ""
+    assert result["recommendation"] == ""
+
+
+def test_source_deduplication():
+    """Duplicate sources from multiple cases are deduplicated."""
+    cases = [
+        ConsultingCase(
+            title="A", content="a",
+            source_type=SourceType.CSV, source_uri="/data.csv",
+        ),
+        ConsultingCase(
+            title="B", content="b",
+            source_type=SourceType.CSV, source_uri="/data.csv",
+        ),
+    ]
+    result = format_response(
+        request_id="req-10",
+        recommendation="Advice.",
+        cases=cases,
+        scores=[0.8, 0.7],
+    )
+    assert len(result["sources"]) == 1
