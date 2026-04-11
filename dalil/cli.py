@@ -1,4 +1,4 @@
-"""Dalil CLI — friendly wrapper around MuninnDB management."""
+"""Dalil CLI - friendly wrapper around MuninnDB management."""
 
 import json
 import re
@@ -65,7 +65,7 @@ def _parse_token(output: str) -> str | None:
 
 @click.group()
 def cli():
-    """Dalil — consulting memory system."""
+    """Dalil - consulting memory system."""
 
 
 @cli.command()
