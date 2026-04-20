@@ -13,7 +13,7 @@ Dalil reads `config.json` at startup. See [config.example.json](../dalil/config/
     "mcp_url": "http://localhost:8750/mcp",
     "token": "",
     "default_vault": "default",
-    "timeout": 10.0
+    "timeout": 60.0
   },
   "llm": {
     "type": "api",
@@ -32,8 +32,9 @@ Dalil reads `config.json` at startup. See [config.example.json](../dalil/config/
     "confluence_email": ""
   },
   "embeddings": {
-    "enabled": false,
-    "model_name": "all-MiniLM-L6-v2"
+    "provider": "",
+    "api_key": "",
+    "model_name": ""
   },
   "log_level": "INFO",
   "api_host": "0.0.0.0",
@@ -49,7 +50,7 @@ Dalil reads `config.json` at startup. See [config.example.json](../dalil/config/
 | `muninn.mcp_url` | string | `http://localhost:8750/mcp` | MuninnDB MCP endpoint. Docker: `http://muninndb:8750/mcp`. |
 | `muninn.token` | string | `""` | Vault API key (`mk_...` format). Leave empty for local dev with default vault. |
 | `muninn.default_vault` | string | `"default"` | Default vault name for requests that don't specify one. |
-| `muninn.timeout` | float | `10.0` | Request timeout in seconds. |
+| `muninn.timeout` | float | `60.0` | Request timeout in seconds. |
 | `llm.type` | string | `"api"` | `"api"` for remote/Ollama, `"local"` for HuggingFace transformers. |
 | `llm.provider` | string | `"ollama"` | Provider hint: `"ollama"`, `"openai"`, `"anthropic"`, `"deepseek"`, or any string. |
 | `llm.model` | string | `"mistral"` | Model identifier. |
@@ -62,8 +63,9 @@ Dalil reads `config.json` at startup. See [config.example.json](../dalil/config/
 | `ingestion.confluence_base_url` | string | `""` | Confluence instance URL. |
 | `ingestion.confluence_token` | string | `""` | Confluence API token. |
 | `ingestion.confluence_email` | string | `""` | Confluence account email. |
-| `embeddings.enabled` | bool | `false` | Enable local embeddings (MuninnDB handles embeddings by default). |
-| `embeddings.model_name` | string | `"all-MiniLM-L6-v2"` | Local embedding model name. |
+| `embeddings.provider` | string | `""` | Embedding provider passthrough to MuninnDB: `"openai"`, `"jina"`, `"cohere"`, `"google"`, `"mistral"`, `"voyage"`. Leave empty to use MuninnDB's default (ONNX local). |
+| `embeddings.api_key` | string | `""` | API key for the embedding provider. Also settable via `EMBED_API_KEY`. |
+| `embeddings.model_name` | string | `""` | Optional model override. MuninnDB uses the provider's default if empty. |
 | `log_level` | string | `"INFO"` | Python log level. |
 | `api_host` | string | `"0.0.0.0"` | API server bind address. |
 | `api_port` | int | `8000` | API server port. |

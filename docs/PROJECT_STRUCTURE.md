@@ -60,8 +60,8 @@ dalil/                    # Main package
     ├── test_cases_schema.py
     └── __init__.py
 
-config.json/            # Root directory for config files
-├── config.example.json # Template
+config.json                     # Active config (copy from template)
+dalil/config/config.example.json # Config template
 
 docs/                   # Documentation (this directory)
 ├── ARCHITECTURE.md           # MuninnDB integration, data model

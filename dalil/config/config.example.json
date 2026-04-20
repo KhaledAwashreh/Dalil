@@ -4,7 +4,7 @@
     "mcp_url": "http://localhost:8750/mcp",
     "token": "",
     "default_vault": "default",
-    "timeout": 10.0
+    "timeout": 60.0
   },
   "llm": {
     "type": "api",
@@ -23,8 +23,9 @@
     "confluence_email": ""
   },
   "embeddings": {
-    "enabled": false,
-    "model_name": "all-MiniLM-L6-v2"
+    "provider": "",
+    "api_key": "",
+    "model_name": ""
   },
   "log_level": "INFO",
   "api_host": "0.0.0.0",

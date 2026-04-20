@@ -139,7 +139,7 @@ Edit `config.json`:
     "mcp_url": "http://localhost:8750/mcp",
     "token": "",
     "default_vault": "default",
-    "timeout": 10.0
+    "timeout": 60.0
   },
   "llm": {
     "type": "api",
@@ -158,8 +158,9 @@ Edit `config.json`:
     "confluence_email": ""
   },
   "embeddings": {
-    "enabled": false,
-    "model_name": "all-MiniLM-L6-v2"
+    "provider": "",
+    "api_key": "",
+    "model_name": ""
   },
   "log_level": "INFO",
   "api_host": "0.0.0.0",
@@ -174,7 +175,7 @@ Edit `config.json`:
 | `muninn.base_url` | string | `http://localhost:8475` | MuninnDB REST endpoint. |
 | `muninn.token` | string | `""` | Vault API key (`mk_...` format). Leave empty for local dev with default vault. |
 | `muninn.default_vault` | string | `"default"` | Default vault name for requests that don't specify one |
-| `muninn.timeout` | float | `10.0` | Request timeout in seconds |
+| `muninn.timeout` | float | `60.0` | Request timeout in seconds |
 | `llm.type` | string | `"api"` | `"api"` for remote/Ollama, `"local"` for HuggingFace transformers |
 | `llm.provider` | string | `"ollama"` | Provider hint: `"ollama"`, `"openai"`, `"anthropic"`, or any string |
 | `llm.model` | string | `"mistral"` | Model identifier |
@@ -185,8 +186,9 @@ Edit `config.json`:
 | `ingestion.chunk_size` | int | `1000` | Max characters per chunk for PDF/Confluence |
 | `ingestion.chunk_overlap` | int | `200` | Overlap between chunks |
 | `ingestion.confluence_*` | string | `""` | Confluence connection (base URL, API token, email) |
-| `embeddings.enabled` | bool | `false` | Enable local embeddings (MuninnDB handles embeddings by default). |
-| `embeddings.model_name` | string | `"all-MiniLM-L6-v2"` | Local embedding model name. |
+| `embeddings.provider` | string | `""` | Embedding provider passthrough to MuninnDB: `openai`, `jina`, `cohere`, `google`, `mistral`, `voyage`. Leave empty for MuninnDB's default (ONNX). |
+| `embeddings.api_key` | string | `""` | API key for the embedding provider (also settable via `EMBED_API_KEY`). |
+| `embeddings.model_name` | string | `""` | Optional model override; MuninnDB uses the provider default if empty. |
 | `log_level` | string | `"INFO"` | Python log level |
 
 ### Environment variable overrides
@@ -369,7 +371,7 @@ Response:
 pytest dalil/tests/ -v
 ```
 
-All 27 tests pass without any external services running (tests cover schema, ingestion, prompt building, and response formatting — not MuninnDB or LLM integration).
+All 96 tests pass without any external services running (tests cover schema, ingestion, prompt building, and response formatting — not MuninnDB or LLM integration).
 
 ## Vault Isolation
 

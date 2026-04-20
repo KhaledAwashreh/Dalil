@@ -9,7 +9,7 @@ Dalil is LLM-agnostic: you pick the provider and model.
 | Provider | Model | Setup | Recommended |
 |----------|-------|-------|-------------|
 | **OpenAI** | `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo` | API key in `OPENAI_API_KEY` | ✅ Best general-purpose |
-| **Anthropic** | `claude-3-5-sonnet`, `claude-3-opus` | API key in `ANTHROPIC_API_KEY` | ✅ Best reasoning |
+| **Anthropic** | `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229` | API key in `ANTHROPIC_API_KEY` | ✅ Best reasoning |
 | **Ollama** | `llama2`, `mistral`, `neural-chat`, etc. | Local binary + `OLLAMA_BASE_URL` | 🟡 No cloud cost |
 | **DeepSeek** | `deepseek-chat`, `deepseek-reasoner` | API key in `DEEPSEEK_API_KEY` | 🟡 Good value |
 | **Cohere** | `command-r-plus`, `command` | API key in `COHERE_API_KEY` | 🟡 Multilingual |
@@ -77,16 +77,19 @@ Embeddings power semantic search in MuninnDB. Dalil supports multiple providers.
 
 Embeddings are configured in MuninnDB, not in Dalil directly. MuninnDB handles all embedding generation internally.
 
-Dalil's `config.json` has a minimal `embeddings` section for optional local embedding support:
+To pass an embedding provider through to MuninnDB, set it in `config.json`:
 
 ```json
 {
   "embeddings": {
-    "enabled": false,
-    "model_name": "all-MiniLM-L6-v2"
+    "provider": "openai",
+    "api_key": "sk-...",
+    "model_name": ""
   }
 }
 ```
+
+Leave `provider` empty (or omit the section) to use MuninnDB's default ONNX embeddings — no configuration needed.
 
 ### Local ONNX (MuninnDB Default)
 
