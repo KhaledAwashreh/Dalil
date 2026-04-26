@@ -47,11 +47,29 @@ class EmbeddingSettings:
 
 
 @dataclass
+class OAuthProviderSettings:
+    """Settings for a single OAuth provider."""
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
+
+
+@dataclass
+class OAuthSettings:
+    """OAuth configuration for all providers."""
+    atlassian: OAuthProviderSettings = field(default_factory=OAuthProviderSettings)
+    openai: OAuthProviderSettings = field(default_factory=OAuthProviderSettings)
+    anthropic: OAuthProviderSettings = field(default_factory=OAuthProviderSettings)
+    storage_path: str = ".dalil_auth"
+
+
+@dataclass
 class Settings:
     muninn: MuninnSettings = field(default_factory=MuninnSettings)
     llm: LLMSettings = field(default_factory=LLMSettings)
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     embeddings: EmbeddingSettings = field(default_factory=EmbeddingSettings)
+    oauth: OAuthSettings = field(default_factory=OAuthSettings)
     log_level: str = "INFO"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
