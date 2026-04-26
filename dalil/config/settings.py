@@ -122,6 +122,18 @@ def load_settings(config_path: str | None = None) -> Settings:
                 model_name=emb.get("model_name", settings.embeddings.model_name),
             )
 
+        if "oauth" in data:
+            oauth_data = data["oauth"]
+            if "storage_path" in oauth_data:
+                settings.oauth.storage_path = oauth_data["storage_path"]
+            for provider_name in ["atlassian", "openai", "anthropic"]:
+                if provider_name in oauth_data:
+                    provider_data = oauth_data[provider_name]
+                    provider_settings = getattr(settings.oauth, provider_name)
+                    provider_settings.client_id = provider_data.get("client_id", provider_settings.client_id)
+                    provider_settings.client_secret = provider_data.get("client_secret", provider_settings.client_secret)
+                    provider_settings.redirect_uri = provider_data.get("redirect_uri", provider_settings.redirect_uri)
+
         settings.log_level = data.get("log_level", settings.log_level)
         settings.api_host = data.get("api_host", settings.api_host)
         settings.api_port = data.get("api_port", settings.api_port)
