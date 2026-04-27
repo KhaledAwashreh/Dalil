@@ -46,6 +46,11 @@ from dalil.memory.muninn_adapter import MuninnBackend
 from dalil.services.consult_service import ConsultService
 from dalil.services.ingest_service import IngestService
 
+# Auth imports
+from dalil.auth import TokenStorage
+from dalil.auth.providers import AtlassianOAuthProvider
+from dalil.auth.routes import setup_oauth_routes
+
 logger = logging.getLogger(__name__)
 
 # --- Application state (initialized at startup) ---
@@ -97,6 +102,24 @@ async def lifespan(app: FastAPI):
             logger.warning("LLM init failed — running in retrieval-only mode: %s", e)
     else:
         logger.info("No LLM configured — running in retrieval-only mode")
+
+    # Initialize OAuth providers (if configured)
+    token_storage = TokenStorage(storage_path=settings.oauth.storage_path)
+    oauth_providers = {}
+
+    if settings.oauth.atlassian.client_id:
+        oauth_providers["atlassian"] = AtlassianOAuthProvider(
+            client_id=settings.oauth.atlassian.client_id,
+            client_secret=settings.oauth.atlassian.client_secret,
+            redirect_uri=settings.oauth.atlassian.redirect_uri or "http://localhost:8000/auth/callback/atlassian",
+        )
+        logger.info("Atlassian OAuth configured")
+
+    # Mount OAuth routes
+    if oauth_providers:
+        auth_router = setup_oauth_routes(token_storage, oauth_providers)
+        app.include_router(auth_router)
+        logger.info("OAuth routes mounted")
 
     # Fetch vault guide (best-effort, non-blocking)
     guide = None
