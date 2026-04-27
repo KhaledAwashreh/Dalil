@@ -4,7 +4,7 @@ Confluence ingestion loader.
 Fetches pages from Atlassian Confluence via REST API v2, extracts body
 content (HTML -> plain text), and converts to ConsultingCase objects.
 
-Requires: confluence_base_url, confluence_email, confluence_token in config.
+Supports both API token auth and OAuth Bearer token auth.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import html
 import logging
 import re
 from urllib.parse import urlparse
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -66,18 +66,36 @@ def parse_confluence_url(url: str) -> dict[str, str]:
 
 
 class ConfluenceLoader:
-    """Loads pages from Confluence REST API."""
+    """Loads pages from Confluence REST API.
+
+    Supports both API token auth (email + token) and OAuth Bearer token auth.
+    """
 
     def __init__(
         self,
         base_url: str,
-        email: str,
-        token: str,
+        email: str = "",
+        token: str = "",
+        oauth_token: Optional[str] = None,
         timeout: float = 30.0,
     ):
         self.base_url = base_url.rstrip("/")
-        self.auth = (email, token)
+        self.email = email
+        self.token = token
+        self.oauth_token = oauth_token
         self.timeout = timeout
+
+    def _get_headers(self) -> dict[str, str]:
+        """Get authentication headers based on configured auth method."""
+        if self.oauth_token:
+            return {"Authorization": f"Bearer {self.oauth_token}"}
+        return {}
+
+    def _get_auth(self):
+        """Get auth tuple for httpx if using API token auth."""
+        if self.email and self.token and not self.oauth_token:
+            return (self.email, self.token)
+        return None
 
     async def fetch_page(
         self,
@@ -88,8 +106,10 @@ class ConfluenceLoader:
         params = {
             "expand": "body.storage,metadata.labels",
         }
-        async with httpx.AsyncClient(auth=self.auth, timeout=self.timeout) as client:
-            resp = await client.get(url, params=params)
+        headers = self._get_headers()
+        auth = self._get_auth()
+        async with httpx.AsyncClient(auth=auth, timeout=self.timeout) as client:
+            resp = await client.get(url, params=params, headers=headers)
             resp.raise_for_status()
             return resp.json()
 
@@ -122,8 +142,10 @@ class ConfluenceLoader:
             "expand": "body.storage,metadata.labels",
             "limit": limit,
         }
-        async with httpx.AsyncClient(auth=self.auth, timeout=self.timeout) as client:
-            resp = await client.get(url, params=params)
+        headers = self._get_headers()
+        auth = self._get_auth()
+        async with httpx.AsyncClient(auth=auth, timeout=self.timeout) as client:
+            resp = await client.get(url, params=params, headers=headers)
             resp.raise_for_status()
             data = resp.json()
             return data.get("results", [])
