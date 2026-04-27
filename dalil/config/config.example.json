@@ -22,12 +22,30 @@
     "confluence_token": "",
     "confluence_email": ""
   },
-  "embeddings": {
-    "provider": "",
-    "api_key": "",
-    "model_name": ""
-  },
-  "log_level": "INFO",
+    "embeddings": {
+      "provider": "",
+      "api_key": "",
+      "model_name": ""
+    },
+    "oauth": {
+      "storage_path": ".dalil_auth",
+      "atlassian": {
+        "client_id": "your-atlassian-client-id",
+        "client_secret": "your-atlassian-client-secret",
+        "redirect_uri": "http://localhost:8000/auth/callback/atlassian"
+      },
+      "openai": {
+        "client_id": "",
+        "client_secret": "",
+        "redirect_uri": ""
+      },
+      "anthropic": {
+        "client_id": "",
+        "client_secret": "",
+        "redirect_uri": ""
+      }
+    },
+    "log_level": "INFO",
   "api_host": "0.0.0.0",
   "api_port": 8000
 }
