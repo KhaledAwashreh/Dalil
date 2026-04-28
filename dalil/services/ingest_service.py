@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 class IngestService:
     """Ingests content from various sources and stores as consulting cases."""
 
-    def __init__(self, memory: MemoryBackend, settings: Settings):
+    def __init__(self, memory: MemoryBackend, settings: Settings, token_storage=None):
         self.memory = memory
         self.settings = settings
+        self.token_storage = token_storage
 
     async def ingest_csv(
         self,
@@ -130,10 +131,19 @@ class IngestService:
                 "or set ingestion.confluence_base_url in config."
             )
 
+        # Check for OAuth token
+        oauth_token = None
+        if self.token_storage:
+            from dalil.auth.models import ProviderType
+            token = self.token_storage.get_token(ProviderType.ATLASSIAN)
+            if token:
+                oauth_token = token.access_token
+
         loader = ConfluenceLoader(
             base_url=confluence_base_url,
             email=self.settings.ingestion.confluence_email,
             token=self.settings.ingestion.confluence_token,
+            oauth_token=oauth_token,
         )
 
         if page_id:
