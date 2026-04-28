@@ -130,3 +130,23 @@ class TestAtlassianOAuthProvider:
 
         assert state1 != state2
         assert len(state1) > 0
+
+
+class TestAuthDependencies:
+    """Tests for FastAPI OAuth dependencies."""
+
+    def test_get_token_storage(self, tmp_path):
+        """Should return token storage instance."""
+        from dalil.auth.dependencies import get_token_storage
+        from dalil.auth.storage import TokenStorage
+
+        # Mock the token_storage in main module
+        import dalil.api.main as main_module
+        main_module.token_storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
+
+        storage = get_token_storage()
+        assert isinstance(storage, TokenStorage)
+
+        # Cleanup
+        main_module.token_storage = None
+
