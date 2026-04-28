@@ -144,7 +144,7 @@ async def lifespan(app: FastAPI):
         llm=llm,
         default_vault=settings.muninn.default_vault,
     )
-    ingest_service = IngestService(memory=memory, settings=settings)
+    ingest_service = IngestService(memory=memory, settings=settings, token_storage=token_storage)
 
     logger.info("Consultant Memory System started")
     yield
