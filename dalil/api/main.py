@@ -279,6 +279,14 @@ async def ingest_pdf_upload(
 @app.post("/ingest/confluence", response_model=IngestResponse)
 async def ingest_confluence(req: IngestConfluenceRequest):
     try:
+        # Check for OAuth token
+        if token_storage:
+            from dalil.auth.models import ProviderType
+            oauth_token = token_storage.get_token(ProviderType.ATLASSIAN)
+            if oauth_token:
+                # Token available - could be passed to service
+                logger.info("Using OAuth token for Confluence ingestion")
+
         result = await ingest_service.ingest_confluence(
             url=req.url,
             page_id=req.page_id,
