@@ -59,6 +59,7 @@ memory: MemoryBackend = None  # type: ignore
 llm: LLMInterface = None  # type: ignore
 consult_service: ConsultService = None  # type: ignore
 ingest_service: IngestService = None  # type: ignore
+token_storage: TokenStorage = None  # type: ignore
 
 
 @asynccontextmanager
