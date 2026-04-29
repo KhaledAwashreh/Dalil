@@ -221,5 +221,37 @@ def vault_key(name):
     click.echo(vaults[name]["token"])
 
 
+@click.group("oauth")
+def oauth():
+    """OAuth authentication commands."""
+    pass
+
+
+@oauth.command("login")
+@click.argument("provider")
+def oauth_login(provider):
+    """Login with OAuth provider (atlassian, openai, anthropic)."""
+    click.echo(f"Visit: http://localhost:8000/auth/login/{provider}")
+    click.echo("After authorization, tokens will be stored automatically.")
+
+
+@oauth.command("status")
+@click.argument("provider", required=False)
+def oauth_status(provider):
+    """Check OAuth authentication status."""
+    import requests
+    url = "http://localhost:8000/auth/status"
+    if provider:
+        url += f"?provider={provider}"
+    try:
+        resp = requests.get(url, timeout=5)
+        click.echo(resp.json())
+    except Exception as e:
+        click.echo(f"Error: {e}")
+
+
+cli.add_command(oauth)
+
+
 if __name__ == "__main__":
     cli()
