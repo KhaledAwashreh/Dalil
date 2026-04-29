@@ -150,3 +150,63 @@ class TestAuthDependencies:
         # Cleanup
         main_module.token_storage = None
 
+
+class TestAuthUtils:
+    """Tests for OAuth utility functions."""
+
+    def test_get_token_for_provider(self, tmp_path):
+        """Should retrieve token for provider."""
+        from dalil.auth.storage import TokenStorage
+        from dalil.auth.models import Token, ProviderType
+        from dalil.auth.utils import get_token_for_provider
+
+        storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
+        token = Token(
+            access_token="test-token",
+            provider=ProviderType.ATLASSIAN,
+        )
+        storage.save_token(token)
+
+        retrieved = get_token_for_provider(ProviderType.ATLASSIAN, storage)
+        assert retrieved is not None
+        assert retrieved.access_token == "test-token"
+
+    def test_is_authenticated_true(self, tmp_path):
+        """Should return True when authenticated."""
+        from dalil.auth.storage import TokenStorage
+        from dalil.auth.models import Token, ProviderType
+        from dalil.auth.utils import is_authenticated
+
+        storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
+        token = Token(
+            access_token="test-token",
+            provider=ProviderType.ATLASSIAN,
+        )
+        storage.save_token(token)
+
+        assert is_authenticated(ProviderType.ATLASSIAN, storage) is True
+
+    def test_is_authenticated_false(self, tmp_path):
+        """Should return False when not authenticated."""
+        from dalil.auth.storage import TokenStorage
+        from dalil.auth.models import ProviderType
+        from dalil.auth.utils import is_authenticated
+
+        storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
+
+        assert is_authenticated(ProviderType.ATLASSIAN, storage) is False
+
+    def test_get_authorization_header(self):
+        """Should create correct Authorization header."""
+        from dalil.auth.models import Token, ProviderType
+        from dalil.auth.utils import get_authorization_header
+
+        token = Token(
+            access_token="my-token",
+            token_type="Bearer",
+            provider=ProviderType.ATLASSIAN,
+        )
+
+        header = get_authorization_header(token)
+        assert header == {"Authorization": "Bearer my-token"}
+
