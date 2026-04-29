@@ -207,7 +207,15 @@ dalil vault delete <name>          # Delete a vault
 - `GET /vault/entities/{name}/timeline` — Entity timeline
 - `GET /vault/entities/{name}/cases` — Entity cases
 
+**OAuth Authentication:**
+- `GET /auth/login/{provider}` — Initiate OAuth login (providers: atlassian, openai, anthropic)
+- `GET /auth/callback/{provider}` — OAuth callback handler
+- `GET /auth/status` — Check authentication status
+- `GET /auth/tokens/{provider}` — Get stored access token
+- `POST /auth/logout` — Logout and clear tokens
+
 Full reference: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+Full OAuth guide: [docs/OAUTH.md](docs/OAUTH.md)
 
 ---
 
