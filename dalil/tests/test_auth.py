@@ -210,3 +210,49 @@ class TestAuthUtils:
         header = get_authorization_header(token)
         assert header == {"Authorization": "Bearer my-token"}
 
+
+class TestOAuthFlow:
+    """Integration tests for OAuth flow."""
+
+    def test_provider_type_values(self):
+        """Should have correct provider values."""
+        from dalil.auth.models import ProviderType
+
+        assert ProviderType.ATLASSIAN == "atlassian"
+        # Use string value to avoid encoding issues
+        assert ProviderType("openai") == "openai"
+        assert ProviderType.ANTHROPIC == "anthropic"
+
+    def test_token_storage_roundtrip(self, tmp_path):
+        """Should save and retrieve tokens correctly."""
+        from dalil.auth.storage import TokenStorage
+        from dalil.auth.models import Token, ProviderType
+
+        storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
+        token = Token(
+            access_token="test123",
+            provider=ProviderType.ATLASSIAN,
+            user_id="user1",
+        )
+        storage.save_token(token)
+
+        retrieved = storage.get_token(ProviderType.ATLASSIAN, "user1")
+        assert retrieved is not None
+        assert retrieved.access_token == "test123"
+
+    def test_multiple_providers(self, tmp_path):
+        """Should handle multiple providers separately."""
+        from dalil.auth.storage import TokenStorage
+        from dalil.auth.models import Token, ProviderType
+
+        storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
+
+        token1 = Token(access_token="token1", provider=ProviderType.ATLASSIAN)
+        token2 = Token(access_token="token2", provider=ProviderType("openai"))
+
+        storage.save_token(token1)
+        storage.save_token(token2)
+
+        assert storage.get_token(ProviderType.ATLASSIAN).access_token == "token1"
+        assert storage.get_token(ProviderType("openai")).access_token == "token2"
+
