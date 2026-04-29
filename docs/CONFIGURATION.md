@@ -147,3 +147,37 @@ services:
 ## Provider-Specific Setup
 
 See [LLM & Embedding Providers](LLM_PROVIDERS.md) for detailed configuration per provider.
+
+## OAuth Configuration
+
+Dalil supports OAuth2/OpenID Connect with Atlassian, OpenAI, and Anthropic.
+
+### OAuth Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `oauth.storage_path` | string | `".dalil_auth"` | Path for encrypted token storage |
+| `oauth.atlassian.client_id` | string | `""` | Atlassian OAuth app client ID |
+| `oauth.atlassian.client_secret` | string | `""` | Atlassian OAuth app client secret |
+| `oauth.atlassian.redirect_uri` | string | `""` | OAuth callback URL |
+| `oauth.openai.client_id` | string | `""` | OpenAI OAuth client ID (when available) |
+| `oauth.openai.client_secret` | string | `""` | OpenAI OAuth client secret |
+| `oauth.anthropic.client_id` | string | `""` | Anthropic OAuth client ID (when available) |
+| `oauth.anthropic.client_secret` | string | `""` | Anthropic OAuth client secret |
+
+### Example OAuth Config
+
+```json
+{
+  "oauth": {
+    "storage_path": ".dalil_auth",
+    "atlassian": {
+      "client_id": "your-client-id",
+      "client_secret": "your-client-secret",
+      "redirect_uri": "http://localhost:8000/auth/callback/atlassian"
+    }
+  }
+}
+```
+
+See [OAuth Integration Guide](OAUTH.md) for complete setup instructions.
