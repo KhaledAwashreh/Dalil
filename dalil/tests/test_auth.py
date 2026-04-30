@@ -247,12 +247,49 @@ class TestOAuthFlow:
 
         storage = TokenStorage(storage_path=str(tmp_path / ".auth"))
 
-        token1 = Token(access_token="token1", provider=ProviderType.ATLASSIAN)
+        token1 = Token(access_token="token1", provider=ProviderType("atlassian"))
         token2 = Token(access_token="token2", provider=ProviderType("openai"))
+        token3 = Token(access_token="token3", provider=ProviderType("anthropic"))
 
         storage.save_token(token1)
         storage.save_token(token2)
+        storage.save_token(token3)
 
-        assert storage.get_token(ProviderType.ATLASSIAN).access_token == "token1"
+        assert storage.get_token(ProviderType("atlassian")).access_token == "token1"
         assert storage.get_token(ProviderType("openai")).access_token == "token2"
+        assert storage.get_token(ProviderType("anthropic")).access_token == "token3"
+
+
+class TestOpenAIOAuthProvider:
+    """Tests for OpenAI OAuth provider."""
+
+    def test_provider_type(self):
+        """Should have correct provider type."""
+        from dalil.auth.providers.openai import OpenAIOAuthProvider
+        assert OpenAIOAuthProvider.provider_type == "openai"
+
+    def test_authorization_url(self):
+        """Should generate valid authorization URL."""
+        from dalil.auth.providers.openai import OpenAIOAuthProvider
+        provider = OpenAIOAuthProvider("client", "secret", "http://localhost:8000/callback")
+        url = provider.get_authorization_url("state123")
+        assert "platform.openai.com" in url
+        assert "state123" in url
+
+
+class TestAnthropicOAuthProvider:
+    """Tests for Anthropic OAuth provider."""
+
+    def test_provider_type(self):
+        """Should have correct provider type."""
+        from dalil.auth.providers.anthropic import AnthropicOAuthProvider
+        assert AnthropicOAuthProvider.provider_type == "anthropic"
+
+    def test_authorization_url(self):
+        """Should generate valid authorization URL."""
+        from dalil.auth.providers.anthropic import AnthropicOAuthProvider
+        provider = AnthropicOAuthProvider("client", "secret", "http://localhost:8000/callback")
+        url = provider.get_authorization_url("state456")
+        assert "console.anthropic.com" in url
+        assert "state456" in url
 
