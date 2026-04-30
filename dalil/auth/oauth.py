@@ -59,3 +59,8 @@ class OAuthProvider(ABC):
         """Create S256 code challenge for PKCE."""
         digest = hashlib.sha256(verifier.encode()).digest()
         return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+    @staticmethod
+    def generate_code_verifier() -> str:
+        """Generate a code verifier for PKCE."""
+        return base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
