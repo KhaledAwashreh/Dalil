@@ -7,8 +7,16 @@ Dalil supports OAuth2/OpenID Connect authentication with Atlassian, OpenAI, and 
 | Provider | Status | Use Case |
 |----------|--------|----------|
 | **Atlassian** | ✅ Complete | Confluence ingestion with user's account |
-| **OpenAI** | 🟡 Stub | Future SSO for ChatGPT/API access |
-| **Anthropic** | 🟡 Stub | Future SSO for Claude API access |
+| **OpenAI** | ✅ Complete | Future SSO for ChatGPT/API access |
+| **Anthropic** | ✅ Complete | Future SSO for Claude API access |
+
+## Quick Start
+
+1. Create OAuth apps with your providers
+2. Configure `config.json` with client credentials
+3. Run `dalil oauth login <provider>`
+4. Complete authorization in browser
+5. Tokens are automatically stored and used for API calls
 
 ## Atlassian OAuth Setup
 
