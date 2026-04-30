@@ -1,12 +1,10 @@
 """
-Anthropic OAuth2 provider (stub).
-
-Note: Anthropic currently uses API keys. OAuth SSO is not available.
-This is a placeholder for future implementation.
+Anthropic OAuth2 provider.
 """
 
 from __future__ import annotations
 
+import httpx
 from datetime import datetime, timezone
 
 from dalil.auth.models import ProviderType, Token, User
@@ -14,33 +12,102 @@ from dalil.auth.oauth import OAuthProvider
 
 
 class AnthropicOAuthProvider(OAuthProvider):
-    """Anthropic OAuth provider (placeholder).
+    """Anthropic OAuth provider."""
 
-    Anthropic's API currently relies on API keys rather than OAuth.
-    This stub is prepared for potential future OAuth support.
-    """
-
-    provider_type = ProviderType.ANTHROPIC
+    provider_type = ProviderType("anthropic")
 
     def __init__(self, client_id: str, client_secret: str, redirect_uri: str):
         super().__init__(client_id, client_secret, redirect_uri)
-        # Anthropic OAuth endpoints (when available)
         self.auth_url = "https://console.anthropic.com/oauth/authorize"
         self.token_url = "https://console.anthropic.com/oauth/token"
+        self.user_url = "https://api.anthropic.com/v1/user"
+        self.scopes = ["api", "models.read"]
 
     def get_authorization_url(self, state: str) -> str:
-        """Generate Anthropic authorization URL (placeholder)."""
-        # TODO: Implement when Anthropic releases OAuth support
-        raise NotImplementedError("Anthropic OAuth not yet supported")
+        """Generate Anthropic authorization URL."""
+        params = {
+            "client_id": self.client_id,
+            "redirect_uri": self.redirect_uri,
+            "state": state,
+            "response_type": "code",
+            "scope": " ".join(self.scopes),
+        }
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        return f"{self.auth_url}?{query}"
 
     async def exchange_code_for_token(self, code: str) -> Token:
-        """Exchange code for token (placeholder)."""
-        raise NotImplementedError("Anthropic OAuth not yet supported")
+        """Exchange authorization code for access token."""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.token_url,
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "code": code,
+                    "redirect_uri": self.redirect_uri,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            expires_at = None
+            if "expires_in" in data:
+                expires_at = datetime.now(timezone.utc).timestamp() + data["expires_in"]
+
+            return Token(
+                access_token=data["access_token"],
+                refresh_token=data.get("refresh_token"),
+                token_type=data.get("token_type", "Bearer"),
+                expires_at=datetime.fromtimestamp(expires_at, tz=timezone.utc) if expires_at else None,
+                scope=data.get("scope"),
+                provider=self.provider_type,
+            )
 
     async def refresh_token(self, refresh_token: str) -> Token:
-        """Refresh token (placeholder)."""
-        raise NotImplementedError("Anthropic OAuth not yet supported")
+        """Refresh an expired access token."""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.token_url,
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "refresh_token": refresh_token,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            expires_at = None
+            if "expires_in" in data:
+                expires_at = datetime.now(timezone.utc).timestamp() + data["expires_in"]
+
+            return Token(
+                access_token=data["access_token"],
+                refresh_token=data.get("refresh_token", refresh_token),
+                token_type=data.get("token_type", "Bearer"),
+                expires_at=datetime.fromtimestamp(expires_at, tz=timezone.utc) if expires_at else None,
+                scope=data.get("scope"),
+                provider=self.provider_type,
+            )
 
     async def get_user_info(self, token: Token) -> User:
-        """Get user info (placeholder)."""
-        raise NotImplementedError("Anthropic OAuth not yet supported")
+        """Retrieve user information from Anthropic API."""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                self.user_url,
+                headers={"Authorization": f"Bearer {token.access_token}"},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            return User(
+                id=data.get("id", ""),
+                email=data.get("email", ""),
+                name=data.get("name", ""),
+                provider=self.provider_type,
+                avatar_url=data.get("avatar_url"),
+            )
