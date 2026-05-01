@@ -495,3 +495,4 @@ curl http://localhost:11434/v1/models
 ### PDF ingestion returns 0 cases
 
 The PDF may be image-based (scanned). `pypdf` only extracts text-based PDFs. For scanned documents, you'd need OCR (not included in this MVP).
+OAuth
