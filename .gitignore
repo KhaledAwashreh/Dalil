@@ -27,4 +27,4 @@ Thumbs.db
 # MuninnDB local data
 .muninn/
 .dalil/
-.claude/
+.claude/# OAuth
