@@ -49,6 +49,10 @@ services:
       LLM_BASE_URL: "${LLM_BASE_URL:-}"
       LLM_MODEL: "${LLM_MODEL:-}"
 
+      # OAuth — set in .env
+      ATLASSIAN_CLIENT_ID: "${ATLASSIAN_CLIENT_ID:-}"
+      ATLASSIAN_CLIENT_SECRET: "${ATLASSIAN_CLIENT_SECRET:-}"
+
       # Config file — mounted into container
       DALIL_CONFIG: "/app/config.json"
     volumes:

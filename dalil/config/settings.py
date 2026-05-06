@@ -148,6 +148,9 @@ def load_settings(config_path: str | None = None) -> Settings:
     settings.embeddings.provider = os.environ.get("EMBED_PROVIDER") or settings.embeddings.provider
     settings.embeddings.api_key = os.environ.get("EMBED_API_KEY") or settings.embeddings.api_key
 
+    settings.oauth.atlassian.client_id = os.environ.get("ATLASSIAN_CLIENT_ID") or settings.oauth.atlassian.client_id
+    settings.oauth.atlassian.client_secret = os.environ.get("ATLASSIAN_CLIENT_SECRET") or settings.oauth.atlassian.client_secret
+
     return settings
 
 

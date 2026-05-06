@@ -1,0 +1,41 @@
+{
+  "muninn": {
+    "base_url": "http://localhost:8476",
+    "mcp_url": "http://localhost:8750/mcp",
+    "token": "",
+    "default_vault": "default",
+    "timeout": 60.0
+  },
+  "llm": {
+    "type": "api",
+    "provider": "ollama",
+    "model": "deepseek-v3.1:671b-cloud",
+    "api_key": "",
+    "base_url": "http://localhost:11434/v1",
+    "temperature": 0.3,
+    "max_tokens": 2048
+  },
+  "embeddings": {
+    "provider": "openai",
+    "api_key": "",
+    "model_name": ""
+  },
+  "ingestion": {
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "confluence_base_url": "",
+    "confluence_email": "",
+    "confluence_token": ""
+  },
+  "oauth": {
+    "storage_path": ".dalil_auth",
+    "atlassian": {
+      "client_id": "",
+      "client_secret": "",
+      "redirect_uri": "http://localhost:8000/auth/callback/atlassian"
+    }
+  },
+  "log_level": "INFO",
+  "api_host": "0.0.0.0",
+  "api_port": 8000
+}
