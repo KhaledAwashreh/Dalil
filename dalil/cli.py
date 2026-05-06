@@ -13,7 +13,8 @@ from urllib.parse import urlparse, parse_qs
 import click
 
 CONTAINER_NAME = "dalil-muninndb"
-VAULTS_FILE = Path(".dalil") / "vaults.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+VAULTS_FILE = PROJECT_ROOT / ".dalil" / "vaults.json"
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b[^[\]].?")
 
@@ -255,13 +256,17 @@ def _load_oauth_settings():
         sys.exit(1)
 
     try:
-        settings = load_settings("config.json")
+        config_path = str(PROJECT_ROOT / "config.json")
+        settings = load_settings(config_path)
     except (json.JSONDecodeError, OSError) as e:
         click.echo(f"Error: could not load config.json: {e}", err=True)
         sys.exit(1)
 
     try:
-        storage = TokenStorage(storage_path=settings.oauth.storage_path)
+        storage_path = settings.oauth.storage_path
+        if not Path(storage_path).is_absolute():
+            storage_path = str(PROJECT_ROOT / storage_path)
+        storage = TokenStorage(storage_path=storage_path)
     except Exception as e:
         click.echo(f"Error: could not initialize token storage: {e}", err=True)
         sys.exit(1)
