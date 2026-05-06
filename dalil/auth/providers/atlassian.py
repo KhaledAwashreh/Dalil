@@ -25,9 +25,10 @@ class AtlassianOAuthProvider(OAuthProvider):
         self.token_url = "https://auth.atlassian.com/oauth/token"
         self.user_url = "https://api.atlassian.com/me"
         self.scopes = [
-            "read:me",
-            "read:confluence-content.all",
-            "read:confluence-space.summary",
+            "read:page:confluence",
+            "read:space:confluence",
+            "read:content-details:confluence",
+            "read:label:confluence",
             "offline_access",
         ]
 
@@ -39,7 +40,7 @@ class AtlassianOAuthProvider(OAuthProvider):
             "redirect_uri": self.redirect_uri,
             "state": state,
             "response_type": "code",
-            "prompt": "consent",
+            "prompt": "login consent",
         }
         query = "&".join(f"{k}={v}" for k, v in params.items())
         return f"{self.auth_url}?{query}"

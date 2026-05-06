@@ -68,8 +68,11 @@ def setup_oauth_routes(storage: TokenStorage, providers: dict[ProviderType, any]
         # Exchange code for token
         token = await provider_handler.exchange_code_for_token(code)
 
-        # Get user info
-        user = await provider_handler.get_user_info(token)
+        # Get user info (optional — may fail if read:me scope not granted)
+        try:
+            user = await provider_handler.get_user_info(token)
+        except Exception:
+            user = User(id="default", email="", name="unknown", provider=provider)
 
         # Store token and user
         storage.save_token(token)
@@ -87,7 +90,7 @@ def setup_oauth_routes(storage: TokenStorage, providers: dict[ProviderType, any]
         """Check authentication status."""
         if provider:
             token = storage.get_token(provider)
-            user = storage.get_user(provider)
+            user = storage.get_user(provider, token.user_id if token else "default")
             return {
                 "authenticated": token is not None,
                 "provider": provider.value,

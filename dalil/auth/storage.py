@@ -81,7 +81,7 @@ class TokenStorage:
         users[key] = user.model_dump(mode='json')
         self._save_all_users(users)
 
-    def get_user(self, provider: ProviderType, user_id: str) -> Optional[User]:
+    def get_user(self, provider: ProviderType, user_id: str = "default") -> Optional[User]:
         """Retrieve user information."""
         users = self._load_all_users()
         key = f"{provider.value}:{user_id}"
