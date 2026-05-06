@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ccd_session__mark_chapter",
+      "mcp__ebb81989-065b-422b-b9c1-8e0baf7aecbe__getJiraIssue",
+      "mcp__ebb81989-065b-422b-b9c1-8e0baf7aecbe__atlassianUserInfo",
+      "mcp__ebb81989-065b-422b-b9c1-8e0baf7aecbe__getAccessibleAtlassianResources",
+      "mcp__ebb81989-065b-422b-b9c1-8e0baf7aecbe__searchJiraIssuesUsingJql"
+    ]
+  }
+}

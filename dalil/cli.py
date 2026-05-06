@@ -1,10 +1,14 @@
 """Dalil CLI - friendly wrapper around MuninnDB management."""
 
+import asyncio
 import json
 import re
 import subprocess
 import sys
+import webbrowser
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 import click
 
@@ -47,14 +51,21 @@ def _container_running() -> bool:
 def _load_vaults() -> dict:
     """Load vault registry from .dalil/vaults.json."""
     if VAULTS_FILE.exists():
-        return json.loads(VAULTS_FILE.read_text())
+        try:
+            return json.loads(VAULTS_FILE.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            click.echo(f"Warning: could not read {VAULTS_FILE}: {e}", err=True)
+            return {}
     return {}
 
 
 def _save_vaults(vaults: dict) -> None:
     """Save vault registry to .dalil/vaults.json."""
-    VAULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    VAULTS_FILE.write_text(json.dumps(vaults, indent=2) + "\n")
+    try:
+        VAULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        VAULTS_FILE.write_text(json.dumps(vaults, indent=2) + "\n")
+    except OSError as e:
+        click.echo(f"Warning: could not save {VAULTS_FILE}: {e}", err=True)
 
 
 def _parse_token(output: str) -> str | None:
@@ -88,9 +99,17 @@ def status():
 @cli.command()
 def serve():
     """Start the Dalil API server."""
-    from dalil.api.main import main
-
-    main()
+    try:
+        from dalil.api.main import main
+        main()
+    except ImportError as e:
+        click.echo(f"Error: could not load API server — missing dependency: {e}", err=True)
+        sys.exit(1)
+    except OSError as e:
+        click.echo(f"Error: could not start server: {e}", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\nServer stopped.")
 
 
 # -- Vault subcommands --------------------------------------------------------
@@ -218,39 +237,254 @@ def vault_key(name):
         click.echo(f"No stored key for vault '{name}'.")
         click.echo("Keys are auto-generated when you run: dalil vault create <name>")
         sys.exit(1)
-    click.echo(vaults[name]["token"])
+    token = vaults[name].get("token")
+    if not token:
+        click.echo(f"Error: vault '{name}' entry exists but has no token.", err=True)
+        sys.exit(1)
+    click.echo(token)
 
 
-@click.group("oauth")
-def oauth():
-    """OAuth authentication commands."""
-    pass
-
-
-@oauth.command("login")
-@click.argument("provider")
-def oauth_login(provider):
-    """Login with OAuth provider (atlassian, openai, anthropic)."""
-    click.echo(f"Visit: http://localhost:8000/auth/login/{provider}")
-    click.echo("After authorization, tokens will be stored automatically.")
-
-
-@oauth.command("status")
-@click.argument("provider", required=False)
-def oauth_status(provider):
-    """Check OAuth authentication status."""
-    import requests
-    url = "http://localhost:8000/auth/status"
-    if provider:
-        url += f"?provider={provider}"
+def _load_oauth_settings():
+    """Load OAuth settings and return (settings, storage, providers) tuple."""
     try:
-        resp = requests.get(url, timeout=5)
-        click.echo(resp.json())
+        from dalil.config.settings import load_settings
+        from dalil.auth.storage import TokenStorage
+        from dalil.auth.models import ProviderType
+    except ImportError as e:
+        click.echo(f"Error: missing dependency for auth: {e}", err=True)
+        sys.exit(1)
+
+    try:
+        settings = load_settings("config.json")
+    except (json.JSONDecodeError, OSError) as e:
+        click.echo(f"Error: could not load config.json: {e}", err=True)
+        sys.exit(1)
+
+    try:
+        storage = TokenStorage(storage_path=settings.oauth.storage_path)
     except Exception as e:
-        click.echo(f"Error: {e}")
+        click.echo(f"Error: could not initialize token storage: {e}", err=True)
+        sys.exit(1)
+
+    providers = {}
+    if settings.oauth.atlassian.client_id:
+        from dalil.auth.providers.atlassian import AtlassianOAuthProvider
+        providers[ProviderType.ATLASSIAN] = AtlassianOAuthProvider(
+            client_id=settings.oauth.atlassian.client_id,
+            client_secret=settings.oauth.atlassian.client_secret,
+            redirect_uri=settings.oauth.atlassian.redirect_uri,
+        )
+    if settings.oauth.openai.client_id:
+        from dalil.auth.providers.openai import OpenAIOAuthProvider
+        providers[ProviderType.OPENAI] = OpenAIOAuthProvider(
+            client_id=settings.oauth.openai.client_id,
+            client_secret=settings.oauth.openai.client_secret,
+            redirect_uri=settings.oauth.openai.redirect_uri,
+        )
+    if settings.oauth.anthropic.client_id:
+        from dalil.auth.providers.anthropic import AnthropicOAuthProvider
+        providers[ProviderType.ANTHROPIC] = AnthropicOAuthProvider(
+            client_id=settings.oauth.anthropic.client_id,
+            client_secret=settings.oauth.anthropic.client_secret,
+            redirect_uri=settings.oauth.anthropic.redirect_uri,
+        )
+    return settings, storage, providers
 
 
-cli.add_command(oauth)
+@click.group("auth")
+def auth():
+    """Authenticate with OAuth providers."""
+
+
+@auth.command("login")
+@click.argument("provider", type=click.Choice(["atlassian", "openai", "anthropic"]))
+def auth_login(provider):
+    """Login with an OAuth provider. Opens browser for authorization."""
+    import time
+    from dalil.auth.models import ProviderType
+
+    provider_type = ProviderType(provider)
+    settings, storage, providers = _load_oauth_settings()
+
+    if provider_type not in providers:
+        click.echo(f"Error: provider '{provider}' is not configured in config.json.", err=True)
+        click.echo(f"Add oauth.{provider}.client_id and client_secret to your config.", err=True)
+        sys.exit(1)
+
+    handler = providers[provider_type]
+    state = handler.generate_state()
+    auth_url = handler.get_authorization_url(state)
+
+    parsed = urlparse(handler.redirect_uri)
+    callback_port = parsed.port or 8000
+    callback_path = parsed.path
+
+    auth_code = None
+    returned_state = None
+    error_msg = None
+
+    class CallbackHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            nonlocal auth_code, returned_state, error_msg
+
+            try:
+                parsed_path = urlparse(self.path)
+                if not parsed_path.path.startswith(callback_path):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+
+                params = parse_qs(parsed_path.query)
+
+                if "error" in params:
+                    error_msg = params["error"][0]
+                    self._respond("Authorization failed. You can close this tab.")
+                    return
+
+                auth_code = params.get("code", [None])[0]
+                returned_state = params.get("state", [None])[0]
+                self._respond("Authorization successful! You can close this tab.")
+            except Exception:
+                error_msg = "malformed callback request"
+                try:
+                    self.send_response(400)
+                    self.end_headers()
+                except Exception:
+                    pass
+
+        def _respond(self, message):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            html = f"<html><body><h2>{message}</h2></body></html>"
+            self.wfile.write(html.encode())
+
+        def log_message(self, format, *args):
+            pass
+
+    try:
+        server = HTTPServer(("127.0.0.1", callback_port), CallbackHandler)
+    except OSError as e:
+        click.echo(f"Error: could not start callback server on port {callback_port}: {e}", err=True)
+        if "address already in use" in str(e).lower() or "10048" in str(e):
+            click.echo("Another process is using that port. Stop it or change the redirect_uri port in config.json.")
+        sys.exit(1)
+
+    server.timeout = 5
+    timeout_seconds = 120
+
+    click.echo(f"Opening browser for {provider} authorization...")
+    if not webbrowser.open(auth_url):
+        click.echo(f"Could not open browser. Visit this URL manually:\n  {auth_url}")
+
+    click.echo("Waiting for authorization callback (timeout: 2 minutes)...")
+
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while auth_code is None and error_msg is None:
+            if time.monotonic() > deadline:
+                error_msg = "timed out waiting for callback"
+                break
+            server.handle_request()
+    except KeyboardInterrupt:
+        click.echo("\nLogin cancelled.")
+        server.server_close()
+        sys.exit(1)
+
+    server.server_close()
+
+    if error_msg:
+        click.echo(f"Authorization failed: {error_msg}", err=True)
+        sys.exit(1)
+
+    if not auth_code:
+        click.echo("Error: no authorization code received.", err=True)
+        sys.exit(1)
+
+    if returned_state != state:
+        click.echo("Error: state mismatch — possible CSRF attack.", err=True)
+        sys.exit(1)
+
+    click.echo("Exchanging code for token...")
+    try:
+        token = asyncio.run(handler.exchange_code_for_token(auth_code))
+    except Exception as e:
+        click.echo(f"Error: token exchange failed: {e}", err=True)
+        sys.exit(1)
+
+    try:
+        user = asyncio.run(handler.get_user_info(token))
+    except Exception as e:
+        click.echo(f"Warning: could not fetch user info: {e}", err=True)
+        click.echo("Token was obtained but user details are unavailable.")
+        from dalil.auth.models import User
+        user = User(id="unknown", email="", name="unknown", provider=provider_type)
+
+    try:
+        storage.save_token(token)
+        storage.save_user(user)
+    except Exception as e:
+        click.echo(f"Error: could not save token to storage: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"Authenticated as {user.name} ({user.email})")
+    click.echo(f"Token stored in {settings.oauth.storage_path}/")
+
+
+@auth.command("status")
+@click.argument("provider", required=False, type=click.Choice(["atlassian", "openai", "anthropic"]))
+def auth_status(provider):
+    """Check authentication status for providers."""
+    from dalil.auth.models import ProviderType
+
+    _, storage, _ = _load_oauth_settings()
+
+    if provider:
+        provider_type = ProviderType(provider)
+        try:
+            token = storage.get_token(provider_type)
+        except Exception as e:
+            click.echo(f"{provider}: error reading token ({e})", err=True)
+            sys.exit(1)
+        if token:
+            click.echo(f"{provider}: authenticated")
+            if token.expires_at:
+                click.echo(f"  expires: {token.expires_at.isoformat()}")
+        else:
+            click.echo(f"{provider}: not authenticated")
+        return
+
+    for p in ProviderType:
+        try:
+            token = storage.get_token(p)
+            status = "authenticated" if token else "not authenticated"
+        except Exception:
+            status = "error reading token"
+        click.echo(f"{p.value}: {status}")
+
+
+@auth.command("logout")
+@click.argument("provider", required=False, type=click.Choice(["atlassian", "openai", "anthropic"]))
+def auth_logout(provider):
+    """Logout and clear stored tokens."""
+    from dalil.auth.models import ProviderType
+
+    _, storage, _ = _load_oauth_settings()
+
+    try:
+        if provider:
+            storage.delete_token(ProviderType(provider))
+            click.echo(f"Logged out from {provider}.")
+        else:
+            for p in ProviderType:
+                storage.delete_token(p)
+            click.echo("Logged out from all providers.")
+    except Exception as e:
+        click.echo(f"Error: could not clear tokens: {e}", err=True)
+        sys.exit(1)
+
+
+cli.add_command(auth)
 
 
 if __name__ == "__main__":
