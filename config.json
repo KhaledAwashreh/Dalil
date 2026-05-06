@@ -30,8 +30,8 @@
   "oauth": {
     "storage_path": ".dalil_auth",
     "atlassian": {
-      "client_id": "",
-      "client_secret": "",
+      "client_id": "ZhMvBAMATMtYoYV6Xufshoz9FoMcjV1a",
+      "client_secret": "ATOAXUiB3k07iBTBm4uvLtHF1NKOY4Th1tgOWAoXYrnC_ljm3QXLVVeT7k9j96zOvv9iF8E87271",
       "redirect_uri": "http://localhost:8000/auth/callback/atlassian"
     }
   },
