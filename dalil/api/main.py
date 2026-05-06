@@ -65,7 +65,7 @@ token_storage: TokenStorage = None  # type: ignore
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and tear down application dependencies."""
-    global settings, memory, llm, consult_service, ingest_service
+    global settings, memory, llm, consult_service, ingest_service, token_storage
 
     # Load config
     config_path = os.environ.get("DALIL_CONFIG", None)
@@ -544,7 +544,8 @@ async def get_entity_cases(entity_name: str, vault: str = "default"):
 def main():
     import uvicorn
 
-    os.environ.setdefault("DALIL_CONFIG", "config.json")
+    project_root = Path(__file__).resolve().parent.parent.parent
+    os.environ.setdefault("DALIL_CONFIG", str(project_root / "config.json"))
     uvicorn.run("dalil.api.main:app", host="0.0.0.0", port=8000, reload=False)
 
 
