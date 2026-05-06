@@ -128,13 +128,13 @@ class IngestService:
 
         # Check for OAuth token
         oauth_token = None
+        cloud_id = None
         if self.token_storage:
             from dalil.auth.models import ProviderType
             token = self.token_storage.get_token(ProviderType.ATLASSIAN)
             if token:
                 oauth_token = token.access_token
-                # Always try to fetch Confluence base URL dynamically when using OAuth
-                dynamic_base_url = await self._get_confluence_base_url(oauth_token)
+                cloud_id, dynamic_base_url = await self._get_confluence_cloud_info(oauth_token)
                 if dynamic_base_url:
                     confluence_base_url = dynamic_base_url
                 elif not confluence_base_url:
@@ -154,6 +154,7 @@ class IngestService:
             email=self.settings.ingestion.confluence_email,
             token=self.settings.ingestion.confluence_token,
             oauth_token=oauth_token,
+            cloud_id=cloud_id,
         )
 
         if page_id:
@@ -199,8 +200,11 @@ class IngestService:
             "vault": vault,
         }
 
-    async def _get_confluence_base_url(self, oauth_token: str) -> str | None:
-        """Fetch Confluence base URL from Atlassian accessible-resources API."""
+    async def _get_confluence_cloud_info(self, oauth_token: str) -> tuple[str | None, str | None]:
+        """Fetch Confluence cloud ID and base URL from Atlassian accessible-resources API.
+
+        Returns (cloud_id, base_url) tuple.
+        """
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
@@ -211,27 +215,25 @@ class IngestService:
                 resources = resp.json()
                 logger.info("Accessible resources: %s", resources)
 
-                # Find the first Confluence site
                 for resource in resources:
                     if resource.get("scopes") and any(
                         "confluence" in scope for scope in resource["scopes"]
                     ):
+                        cloud_id = resource.get("id")
                         url = resource.get("url", "")
-                        if url:
-                            # Ensure it ends with /wiki for the API
-                            if not url.endswith("/wiki"):
-                                url = url.rstrip("/") + "/wiki"
-                            logger.info("Found Confluence URL: %s", url)
-                            return url
+                        if url and not url.endswith("/wiki"):
+                            url = url.rstrip("/") + "/wiki"
+                        logger.info("Found Confluence cloud_id=%s url=%s", cloud_id, url)
+                        return cloud_id, url
 
-                # Fallback: return first resource URL even if not Confluence-specific
                 if resources:
+                    cloud_id = resources[0].get("id")
                     url = resources[0].get("url", "")
                     if url and not url.endswith("/wiki"):
                         url = url.rstrip("/") + "/wiki"
-                    logger.info("Using fallback resource URL: %s", url)
-                    return url
+                    logger.info("Using fallback resource cloud_id=%s url=%s", cloud_id, url)
+                    return cloud_id, url
 
         except Exception as e:
-            logger.warning("Failed to fetch Confluence base URL from Atlassian API: %s", e)
-        return None
+            logger.warning("Failed to fetch Confluence cloud info from Atlassian API: %s", e)
+        return None, None

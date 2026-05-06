@@ -77,13 +77,22 @@ class ConfluenceLoader:
         email: str = "",
         token: str = "",
         oauth_token: Optional[str] = None,
+        cloud_id: Optional[str] = None,
         timeout: float = 30.0,
     ):
         self.base_url = base_url.rstrip("/")
         self.email = email
         self.token = token
         self.oauth_token = oauth_token
+        self.cloud_id = cloud_id
         self.timeout = timeout
+
+    @property
+    def _api_base(self) -> str:
+        """API base URL — uses Atlassian cloud proxy for OAuth, direct URL otherwise."""
+        if self.oauth_token and self.cloud_id:
+            return f"https://api.atlassian.com/ex/confluence/{self.cloud_id}"
+        return self.base_url
 
     def _get_headers(self) -> dict[str, str]:
         """Get authentication headers based on configured auth method."""
@@ -97,21 +106,41 @@ class ConfluenceLoader:
             return (self.email, self.token)
         return None
 
-    async def fetch_page(
-        self,
-        page_id: str,
-    ) -> dict[str, Any]:
-        """Fetch a single page by ID."""
-        url = f"{self.base_url}/rest/api/content/{page_id}"
-        params = {
-            "expand": "body.storage,metadata.labels",
-        }
+    async def fetch_page(self, page_id: str) -> dict[str, Any]:
+        """Fetch a single page by ID using v2 API for OAuth, v1 for token auth."""
         headers = self._get_headers()
         auth = self._get_auth()
         async with httpx.AsyncClient(auth=auth, timeout=self.timeout) as client:
-            resp = await client.get(url, params=params, headers=headers)
-            resp.raise_for_status()
-            return resp.json()
+            if self.oauth_token and self.cloud_id:
+                resp = await client.get(
+                    f"{self._api_base}/wiki/api/v2/pages/{page_id}",
+                    params={"body-format": "storage"},
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                return resp.json()
+            else:
+                resp = await client.get(
+                    f"{self._api_base}/rest/api/content/{page_id}",
+                    params={"expand": "body.storage,metadata.labels"},
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                return resp.json()
+
+    async def fetch_page_labels(self, page_id: str) -> list[str]:
+        """Fetch labels for a page (v2 only, returns empty for v1)."""
+        if not (self.oauth_token and self.cloud_id):
+            return []
+        headers = self._get_headers()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(
+                f"{self._api_base}/wiki/api/v2/pages/{page_id}/labels",
+                headers=headers,
+            )
+            if resp.is_success:
+                return [l.get("name", "") for l in resp.json().get("results", [])]
+            return []
 
     async def load_page(
         self,
@@ -122,53 +151,70 @@ class ConfluenceLoader:
     ) -> list[ConsultingCase]:
         """Load a single page by ID and convert to ConsultingCase objects."""
         page = await self.fetch_page(page_id)
+        labels = await self.fetch_page_labels(page_id)
         return self._page_to_cases(
             page,
+            extra_labels=labels,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             default_tags=default_tags,
         )
 
-    async def fetch_pages(
-        self,
-        space_key: str,
-        limit: int = 25,
-    ) -> list[dict[str, Any]]:
+    async def fetch_pages(self, space_key: str, limit: int = 25) -> list[dict[str, Any]]:
         """Fetch pages from a Confluence space."""
-        url = f"{self.base_url}/rest/api/content"
-        params = {
-            "spaceKey": space_key,
-            "type": "page",
-            "expand": "body.storage,metadata.labels",
-            "limit": limit,
-        }
         headers = self._get_headers()
         auth = self._get_auth()
         async with httpx.AsyncClient(auth=auth, timeout=self.timeout) as client:
-            resp = await client.get(url, params=params, headers=headers)
-            if resp.status_code == 403:
-                logger.error("403 Forbidden from Confluence API. Response: %s", resp.text)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("results", [])
+            if self.oauth_token and self.cloud_id:
+                space_resp = await client.get(
+                    f"{self._api_base}/wiki/api/v2/spaces",
+                    params={"keys": space_key},
+                    headers=headers,
+                )
+                space_resp.raise_for_status()
+                spaces = space_resp.json().get("results", [])
+                if not spaces:
+                    raise ValueError(f"Space '{space_key}' not found")
+                space_id = spaces[0]["id"]
+
+                resp = await client.get(
+                    f"{self._api_base}/wiki/api/v2/pages",
+                    params={"space-id": space_id, "body-format": "storage", "limit": limit},
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                return resp.json().get("results", [])
+            else:
+                resp = await client.get(
+                    f"{self._api_base}/rest/api/content",
+                    params={
+                        "spaceKey": space_key,
+                        "type": "page",
+                        "expand": "body.storage,metadata.labels",
+                        "limit": limit,
+                    },
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                return resp.json().get("results", [])
 
     def _page_to_cases(
         self,
         page: dict[str, Any],
+        extra_labels: list[str] | None = None,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         default_tags: list[str] | None = None,
     ) -> list[ConsultingCase]:
-        """Convert a single Confluence page dict into ConsultingCase objects."""
+        """Convert a Confluence page dict (v1 or v2 format) into ConsultingCase objects."""
         title = page.get("title", "Untitled")
-        page_id = page.get("id", "")
-        body_html = (
-            page.get("body", {}).get("storage", {}).get("value", "")
-        )
-        labels = [
-            lbl.get("name", "")
-            for lbl in page.get("metadata", {}).get("labels", {}).get("results", [])
-        ]
+        page_id = str(page.get("id", ""))
+
+        body_html = page.get("body", {}).get("storage", {}).get("value", "")
+
+        labels = list(extra_labels or [])
+        v1_labels = page.get("metadata", {}).get("labels", {}).get("results", [])
+        labels.extend(lbl.get("name", "") for lbl in v1_labels)
 
         raw_text = _strip_html(body_html)
         text = normalize_text(raw_text)
@@ -213,8 +259,11 @@ class ConfluenceLoader:
         cases: list[ConsultingCase] = []
 
         for page in pages:
+            page_id = str(page.get("id", ""))
+            labels = await self.fetch_page_labels(page_id) if (self.oauth_token and self.cloud_id) else []
             cases.extend(self._page_to_cases(
                 page,
+                extra_labels=labels,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 default_tags=default_tags,
