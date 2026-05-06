@@ -173,6 +173,9 @@ dalil vault key <name>             # Show stored API key
 dalil vault clone <source> <new>   # Clone a vault
 dalil vault clear <name>           # Clear all memories from a vault
 dalil vault delete <name>          # Delete a vault
+dalil auth login <provider>        # OAuth login (opens browser)
+dalil auth status [provider]       # Check auth status
+dalil auth logout [provider]       # Clear stored tokens
 ```
 
 ---
@@ -222,11 +225,3 @@ Full OAuth guide: [docs/OAUTH.md](docs/OAUTH.md)
 ## License
 
 MIT License (see LICENSE file)
-# OAuth Implementation
-OAuth commit 1
-OAuth commit 2
-OAuth commit 3
-OAuth commit 4
-OAuth commit 5
-OAuth commit 6
-OAuth commit 7

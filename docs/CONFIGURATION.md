@@ -36,6 +36,14 @@ Dalil reads `config.json` at startup. See [config.example.json](../dalil/config/
     "api_key": "",
     "model_name": ""
   },
+  "oauth": {
+    "storage_path": ".dalil_auth",
+    "atlassian": {
+      "client_id": "",
+      "client_secret": "",
+      "redirect_uri": "http://localhost:8000/auth/callback/atlassian"
+    }
+  },
   "log_level": "INFO",
   "api_host": "0.0.0.0",
   "api_port": 8000
