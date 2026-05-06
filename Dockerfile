@@ -13,10 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ---- Stage 2: Runtime ----
 FROM python:3.11-slim AS runtime
 
-# Create non-root user
-RUN groupadd --gid 1000 dalil && \
-    useradd --uid 1000 --gid dalil --create-home dalil
-
 WORKDIR /app
 
 # Copy installed packages from deps stage
@@ -27,11 +23,8 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 COPY dalil/ dalil/
 COPY requirements.txt .
 
-# Create directories for logs and config (writable by non-root user)
-RUN mkdir -p /app/logs && chown -R dalil:dalil /app
-
-# Switch to non-root user
-USER dalil
+# Create directories for logs and auth storage
+RUN mkdir -p /app/logs /app/.dalil_auth
 
 # Environment defaults — override via docker-compose or `docker run -e`
 ENV DALIL_CONFIG=""

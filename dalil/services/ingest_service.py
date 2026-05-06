@@ -4,6 +4,7 @@ IngestService — orchestrates ingestion from any source into memory.
 
 from __future__ import annotations
 
+import httpx
 import logging
 import time
 import uuid
@@ -125,12 +126,6 @@ class IngestService:
             confluence_base_url = confluence_base_url or parsed["base_url"]
             source_uri = url
 
-        if not confluence_base_url:
-            raise ValueError(
-                "No Confluence base URL configured. Provide a full page URL "
-                "or set ingestion.confluence_base_url in config."
-            )
-
         # Check for OAuth token
         oauth_token = None
         if self.token_storage:
@@ -138,6 +133,21 @@ class IngestService:
             token = self.token_storage.get_token(ProviderType.ATLASSIAN)
             if token:
                 oauth_token = token.access_token
+                # Always try to fetch Confluence base URL dynamically when using OAuth
+                dynamic_base_url = await self._get_confluence_base_url(oauth_token)
+                if dynamic_base_url:
+                    confluence_base_url = dynamic_base_url
+                elif not confluence_base_url:
+                    raise ValueError(
+                        "Could not determine Confluence base URL. "
+                        "Ensure OAuth token has correct scopes or provide URL in request."
+                    )
+
+        if not confluence_base_url:
+            raise ValueError(
+                "No Confluence base URL configured. Provide a full page URL, "
+                "set ingestion.confluence_base_url in config, or ensure OAuth is configured."
+            )
 
         loader = ConfluenceLoader(
             base_url=confluence_base_url,
@@ -154,7 +164,7 @@ class IngestService:
                 chunk_overlap=self.settings.ingestion.chunk_overlap,
                 default_tags=default_tags,
             )
-            source_uri = source_uri or f"{self.settings.ingestion.confluence_base_url}/pages/{page_id}"
+            source_uri = source_uri or f"{confluence_base_url}/pages/{page_id}"
         elif space_key:
             # Full space ingestion
             cases = await loader.load_space(
@@ -164,7 +174,7 @@ class IngestService:
                 chunk_overlap=self.settings.ingestion.chunk_overlap,
                 default_tags=default_tags,
             )
-            source_uri = f"{self.settings.ingestion.confluence_base_url}/spaces/{space_key}"
+            source_uri = f"{confluence_base_url}/spaces/{space_key}"
         else:
             raise ValueError("Provide one of: url, page_id, or space_key")
 
@@ -188,3 +198,40 @@ class IngestService:
             "cases_created": len(ids),
             "vault": vault,
         }
+
+    async def _get_confluence_base_url(self, oauth_token: str) -> str | None:
+        """Fetch Confluence base URL from Atlassian accessible-resources API."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.atlassian.com/oauth/token/accessible-resources",
+                    headers={"Authorization": f"Bearer {oauth_token}"},
+                )
+                resp.raise_for_status()
+                resources = resp.json()
+                logger.info("Accessible resources: %s", resources)
+
+                # Find the first Confluence site
+                for resource in resources:
+                    if resource.get("scopes") and any(
+                        "confluence" in scope for scope in resource["scopes"]
+                    ):
+                        url = resource.get("url", "")
+                        if url:
+                            # Ensure it ends with /wiki for the API
+                            if not url.endswith("/wiki"):
+                                url = url.rstrip("/") + "/wiki"
+                            logger.info("Found Confluence URL: %s", url)
+                            return url
+
+                # Fallback: return first resource URL even if not Confluence-specific
+                if resources:
+                    url = resources[0].get("url", "")
+                    if url and not url.endswith("/wiki"):
+                        url = url.rstrip("/") + "/wiki"
+                    logger.info("Using fallback resource URL: %s", url)
+                    return url
+
+        except Exception as e:
+            logger.warning("Failed to fetch Confluence base URL from Atlassian API: %s", e)
+        return None

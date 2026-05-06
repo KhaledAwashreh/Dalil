@@ -146,6 +146,8 @@ class ConfluenceLoader:
         auth = self._get_auth()
         async with httpx.AsyncClient(auth=auth, timeout=self.timeout) as client:
             resp = await client.get(url, params=params, headers=headers)
+            if resp.status_code == 403:
+                logger.error("403 Forbidden from Confluence API. Response: %s", resp.text)
             resp.raise_for_status()
             data = resp.json()
             return data.get("results", [])

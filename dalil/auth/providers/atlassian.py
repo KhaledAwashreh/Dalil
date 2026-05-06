@@ -25,6 +25,7 @@ class AtlassianOAuthProvider(OAuthProvider):
         self.token_url = "https://auth.atlassian.com/oauth/token"
         self.user_url = "https://api.atlassian.com/me"
         self.scopes = [
+            "read:me",
             "read:confluence-content.all",
             "read:confluence-space.summary",
             "offline_access",
@@ -33,7 +34,6 @@ class AtlassianOAuthProvider(OAuthProvider):
     def get_authorization_url(self, state: str) -> str:
         """Generate Atlassian authorization URL."""
         params = {
-            "audience": "api.atlassian.com",
             "client_id": self.client_id,
             "scope": " ".join(self.scopes),
             "redirect_uri": self.redirect_uri,

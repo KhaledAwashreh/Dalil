@@ -54,6 +54,7 @@ services:
     volumes:
       - dalil-logs:/app/logs
       - ./.dalil:/app/.dalil:ro
+      - dalil-auth:/app/.dalil_auth
       - ./config.json:/app/config.json:ro
     # Share MuninnDB's network namespace so 127.0.0.1 reaches MuninnDB
     network_mode: "service:muninndb"
@@ -95,4 +96,6 @@ volumes:
   muninndb-data:
     driver: local
   dalil-logs:
+    driver: local
+  dalil-auth:
     driver: local
